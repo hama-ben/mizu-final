@@ -1,0 +1,2 @@
+- [Al-Shaibia stack quirks](al-shaibia-stack.md) — lib/api-zod and lib/api-client-react have a stale src/generated vs src/src/generated split; always copy from src/src/generated into src/generated when regenerating.
+- [Session limit architecture](session-limit.md) — 2-device session limit via in-memory sessionStore in auth.ts; X-Session-Token + X-User-Id headers sent on every API call via custom-fetch getters registered in use-auth.ts.

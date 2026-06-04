@@ -1,0 +1,684 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
+import { Layout } from "@/components/layout";
+import { useCreateOrder, useGetUserOrders, getGetUserOrdersQueryKey } from "@workspace/api-client-react";
+import { useCancelOrder } from "@/hooks/use-cancel-order";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  Droplet, ShoppingBag, ListOrdered, CheckCircle2,
+  Truck, Clock, ArrowRight, Loader2, MessageCircle, MapPin, Bell, X,
+  User, Phone, XCircle, Star, Megaphone, Flag,
+} from "lucide-react";
+import { format } from "date-fns";
+
+type View = "menu" | "new-order" | "my-orders";
+
+const VOLUMES = ["5ل", "10ل", "15ل", "20ل", "50ل", "100ل", "150ل", "200ل", "500ل", "1000ل"];
+
+function createSingleBeep() {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.setValueAtTime(660, ctx.currentTime + 0.15);
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.65);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.7);
+    setTimeout(() => { try { ctx.close(); } catch { /* ignore */ } }, 900);
+  } catch { /* ignore */ }
+}
+
+interface DriverAcceptedInfo {
+  driverName: string | null;
+  driverPhone: string | null;
+  orderId: string;
+}
+
+export default function Dashboard() {
+  const { userId, userType } = useAuth();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const [view, setView] = useState<View>("menu");
+  const [showArrivalModal, setShowArrivalModal] = useState(false);
+  const [showDriverAcceptedModal, setShowDriverAcceptedModal] = useState(false);
+  const [driverAcceptedInfo, setDriverAcceptedInfo] = useState<DriverAcceptedInfo | null>(null);
+  const arrivedOrderIdRef = useRef<string | null>(null);
+  const acceptedOrderIdRef = useRef<Set<string>>(new Set());
+  const arrivalLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ from: "user" | "bot"; text: string }[]>([
+    { from: "bot", text: "مرحباً! كيف يمكنني مساعدتك في طلب المياه؟" }
+  ]);
+  const [chatInput, setChatInput] = useState("");
+
+  if (!userId) { setLocation("/"); return null; }
+  if (userType === "سائق") { setLocation("/driver-dashboard"); return null; }
+
+  const startArrivalLoop = () => {
+    stopArrivalLoop();
+    createSingleBeep();
+    arrivalLoopRef.current = setInterval(() => { createSingleBeep(); }, 1500);
+  };
+
+  const stopArrivalLoop = () => {
+    if (arrivalLoopRef.current !== null) {
+      clearInterval(arrivalLoopRef.current);
+      arrivalLoopRef.current = null;
+    }
+  };
+
+  const handleAcknowledge = () => { stopArrivalLoop(); setShowArrivalModal(false); };
+
+  const handleSendChat = () => {
+    const msg = chatInput.trim();
+    if (!msg) return;
+    setChatMessages(prev => [...prev, { from: "user", text: msg }]);
+    setChatInput("");
+    setTimeout(() => {
+      setChatMessages(prev => [...prev, { from: "bot", text: getBotReply(msg) }]);
+    }, 600);
+  };
+
+  return (
+    <Layout>
+      {showArrivalModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 mx-4 max-w-sm w-full shadow-2xl border border-sky-200 dark:border-sky-800 text-center animate-in zoom-in-95 duration-300">
+            <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-5 animate-bounce">
+              <Truck className="w-10 h-10 text-amber-500" />
+            </div>
+            <h2 className="text-2xl font-black text-slate-800 dark:text-white mb-3">شاحنة الماء وصلت!</h2>
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed mb-6">
+              السائق متواجد الآن أمام منزلك، يرجى الخروج لاستلام الطلب.
+            </p>
+            <button onClick={handleAcknowledge}
+              className="w-full bg-gradient-to-r from-amber-400 to-orange-500 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-amber-400/30 hover:opacity-90 transition-all active:scale-[0.98]"
+              data-testid="button-close-arrival-modal">
+              حسناً، في الطريق
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showDriverAcceptedModal && driverAcceptedInfo && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 mx-4 max-w-sm w-full shadow-2xl border border-emerald-200 dark:border-emerald-800 text-center animate-in zoom-in-95 duration-300" dir="rtl">
+            <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
+              <Truck className="w-10 h-10 text-emerald-500" />
+            </div>
+            <h2 className="text-xl font-black text-slate-800 dark:text-white mb-2">تم قبول طلبك!</h2>
+            <p className="text-slate-500 text-sm mb-4">السائق التالي في طريقه إليك</p>
+            <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-2xl p-4 space-y-3 text-right mb-6">
+              {driverAcceptedInfo.driverName && (
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
+                    <User className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">اسم السائق</p>
+                    <p className="font-bold text-slate-800 dark:text-white">{driverAcceptedInfo.driverName}</p>
+                  </div>
+                </div>
+              )}
+              {driverAcceptedInfo.driverPhone && (
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
+                    <Phone className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">رقم الهاتف</p>
+                    <a href={`tel:${driverAcceptedInfo.driverPhone}`} className="font-bold text-primary hover:underline">{driverAcceptedInfo.driverPhone}</a>
+                  </div>
+                </div>
+              )}
+            </div>
+            <button onClick={() => setShowDriverAcceptedModal(false)}
+              className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold py-3.5 rounded-2xl shadow-lg hover:opacity-90 transition-all active:scale-[0.98]">
+              حسناً، شكراً
+            </button>
+          </div>
+        </div>
+      )}
+
+      {view === "menu" && <MenuView onSelect={setView} />}
+      {view === "new-order" && (
+        <NewOrderView onBack={() => setView("menu")} onSuccess={() => setView("my-orders")} userId={userId} queryClient={queryClient} />
+      )}
+      {view === "my-orders" && (
+        <MyOrdersView
+          onBack={() => setView("menu")}
+          userId={userId}
+          onDriverArrived={(orderId) => {
+            if (arrivedOrderIdRef.current !== orderId) {
+              arrivedOrderIdRef.current = orderId;
+              setShowArrivalModal(true);
+              startArrivalLoop();
+            }
+          }}
+          onDriverAccepted={(info) => {
+            if (!acceptedOrderIdRef.current.has(info.orderId)) {
+              acceptedOrderIdRef.current.add(info.orderId);
+              setDriverAcceptedInfo(info);
+              setShowDriverAcceptedModal(true);
+            }
+          }}
+          queryClient={queryClient}
+        />
+      )}
+
+      <button onClick={() => setSupportOpen(v => !v)}
+        className="fixed bottom-6 left-6 w-14 h-14 bg-primary text-white rounded-full flex items-center justify-center shadow-xl shadow-primary/30 hover:scale-105 active:scale-95 transition-all z-50"
+        data-testid="button-support" title="تواصل مع الدعم">
+        {supportOpen ? <X className="w-6 h-6" /> : <MessageCircle className="w-6 h-6" />}
+      </button>
+
+      {supportOpen && (
+        <div className="fixed bottom-24 left-6 w-80 glass-panel rounded-3xl shadow-2xl z-50 overflow-hidden flex flex-col" style={{ maxHeight: "420px" }}>
+          <div className="bg-gradient-to-r from-primary to-cyan-500 text-white p-4 font-bold text-center">خدمة العملاء</div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-2" style={{ minHeight: "200px", maxHeight: "280px" }}>
+            {chatMessages.map((m, i) => (
+              <div key={i} className={`flex ${m.from === "user" ? "justify-start" : "justify-end"}`}>
+                <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm ${m.from === "user" ? "bg-primary text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"}`}>
+                  {m.text}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="p-3 border-t border-slate-200 dark:border-slate-700 flex gap-2">
+            <input value={chatInput} onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSendChat()}
+              placeholder="اكتب سؤالك..." className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-2 text-sm outline-none"
+              data-testid="input-chat" />
+            <button onClick={handleSendChat} className="bg-primary text-white rounded-xl px-3 py-2 text-sm font-bold" data-testid="button-chat-send">إرسال</button>
+          </div>
+        </div>
+      )}
+    </Layout>
+  );
+}
+
+function getBotReply(msg: string): string {
+  const q = msg.toLowerCase();
+  if (q.includes("سعر") || q.includes("تكلف")) return "الأسعار تبدأ من 25 دج للتر وتعتمد على الحجم. 💧";
+  if (q.includes("وقت") || q.includes("كم") || q.includes("متى")) return "يصل الطلب في غضون 30 إلى 60 دقيقة حسب موقعك. 🚚";
+  if (q.includes("الغ") || q.includes("إلغ")) return "يمكنك إلغاء الطلب فقط إذا كان في حالة 'معلق'. استخدم زر الإلغاء في قائمة طلباتي.";
+  if (q.includes("دفع") || q.includes("كيف")) return "الدفع يكون نقداً عند الاستلام. 💵";
+  return "شكراً لتواصلك! فريق الدعم سيرد عليك قريباً على رقم هاتفك المسجل. 😊";
+}
+
+// ─── Announcements Bar (consumer) ────────────────────────────────────────────
+function AnnouncementsBar() {
+  const [items, setItems] = useState<{ id: string; title: string; content: string; badgeText: string | null }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/announcements?target=consumer")
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setItems(data); })
+      .catch(() => {});
+  }, []);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="space-y-3" dir="rtl">
+      {items.map(item => (
+        <div key={item.id} className="bg-gradient-to-l from-primary/10 to-cyan-400/10 border border-primary/20 rounded-2xl p-4 flex items-start gap-3">
+          <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+            <Megaphone className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="font-bold text-slate-800 dark:text-white text-sm">{item.title}</span>
+              {item.badgeText && (
+                <span className="bg-primary text-white text-xs font-bold px-2 py-0.5 rounded-full">{item.badgeText}</span>
+              )}
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{item.content}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Star Rating Modal ────────────────────────────────────────────────────────
+interface RatingModalProps {
+  orderId: string;
+  raterUserId: string;
+  ratedUserId: string;
+  raterType: "consumer" | "driver";
+  ratedName?: string;
+  onClose: () => void;
+  onSubmitted: () => void;
+}
+function RatingModal({ orderId, raterUserId, ratedUserId, raterType, ratedName, onClose, onSubmitted }: RatingModalProps) {
+  const [stars, setStars] = useState(0);
+  const [hovered, setHovered] = useState(0);
+  const [showDispute, setShowDispute] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [ratingId, setRatingId] = useState<string | null>(null);
+  const [step, setStep] = useState<"rate" | "dispute-form" | "done">("rate");
+
+  const submitRating = async () => {
+    if (stars === 0) { setError("يرجى اختيار عدد النجوم"); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(`/api/orders/${orderId}/rate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raterUserId, ratedUserId, raterType, stars }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError((data as { error?: string }).error || "حدث خطأ"); return; }
+      setRatingId(data.id);
+      if (showDispute && disputeReason.trim()) {
+        await fetch(`/api/ratings/${data.id}/dispute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ disputeReason: disputeReason.trim() }),
+        });
+      }
+      setStep("done");
+      setTimeout(() => { onSubmitted(); }, 1500);
+    } catch {
+      setError("تعذّر الإرسال، يرجى المحاولة مرة أخرى");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitDispute = async () => {
+    if (!ratingId || !disputeReason.trim()) { setError("يرجى كتابة سبب الاعتراض"); return; }
+    setLoading(true); setError("");
+    try {
+      await fetch(`/api/ratings/${ratingId}/dispute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disputeReason: disputeReason.trim() }),
+      });
+      setStep("done");
+      setTimeout(() => { onSubmitted(); }, 1200);
+    } catch {
+      setError("تعذّر إرسال الاعتراض");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 mx-4 max-w-sm w-full shadow-2xl border border-primary/20 animate-in zoom-in-95 duration-300" dir="rtl">
+        {step === "done" ? (
+          <div className="text-center py-4">
+            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+            </div>
+            <p className="font-bold text-slate-800 dark:text-white">شكراً على تقييمك!</p>
+          </div>
+        ) : step === "dispute-form" ? (
+          <>
+            <h3 className="font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-2"><Flag className="w-5 h-5 text-red-500" />تقديم اعتراض</h3>
+            <textarea
+              value={disputeReason}
+              onChange={e => setDisputeReason(e.target.value)}
+              placeholder="اكتب سبب اعتراضك هنا..."
+              className="w-full border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-sm resize-none h-24 outline-none focus:ring-2 focus:ring-primary/40 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+            />
+            {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setStep("rate")} className="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm">رجوع</button>
+              <button onClick={submitDispute} disabled={loading} className="flex-1 py-3 rounded-2xl bg-red-500 text-white font-bold text-sm disabled:opacity-60 flex items-center justify-center gap-2">
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}إرسال الاعتراض
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <button onClick={onClose} className="absolute top-4 left-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200">
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="font-bold text-slate-800 dark:text-white mb-1 text-lg">قيّم التوصيل</h3>
+            {ratedName && <p className="text-sm text-slate-500 mb-4">{ratedName}</p>}
+            <div className="flex items-center justify-center gap-2 mb-5">
+              {[1, 2, 3, 4, 5].map(n => (
+                <button key={n} onMouseEnter={() => setHovered(n)} onMouseLeave={() => setHovered(0)} onClick={() => setStars(n)}
+                  className="transition-transform hover:scale-110 active:scale-95">
+                  <Star className={`w-10 h-10 ${n <= (hovered || stars) ? "fill-amber-400 text-amber-400" : "text-slate-300"}`} />
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 mb-4 cursor-pointer">
+              <input type="checkbox" className="rounded" checked={showDispute} onChange={e => setShowDispute(e.target.checked)} />
+              <span>رغبتُ في تقديم اعتراض</span>
+            </label>
+            {showDispute && (
+              <textarea
+                value={disputeReason}
+                onChange={e => setDisputeReason(e.target.value)}
+                placeholder="اكتب سبب اعتراضك..."
+                className="w-full border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-sm resize-none h-20 outline-none focus:ring-2 focus:ring-primary/40 bg-white dark:bg-slate-800 text-slate-800 dark:text-white mb-3"
+              />
+            )}
+            {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
+            <button onClick={submitRating} disabled={loading || stars === 0}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-primary to-cyan-500 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:opacity-90">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Star className="w-5 h-5 fill-white" />}
+              إرسال التقييم
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MenuView({ onSelect }: { onSelect: (view: View) => void }) {
+  return (
+    <div className="flex flex-col gap-6 mt-8">
+      <AnnouncementsBar />
+      <button onClick={() => onSelect("new-order")} className="bubble-card p-8 flex flex-col items-center justify-center gap-4 group" data-testid="button-nav-new-order">
+        <div className="w-20 h-20 bg-gradient-to-tr from-sky-400 to-primary rounded-full flex items-center justify-center shadow-lg shadow-sky-400/40 group-hover:scale-110 transition-transform duration-300">
+          <ShoppingBag className="w-10 h-10 text-white" />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white">طلب جديد</h2>
+        <p className="text-slate-500 text-center max-w-[200px]">اطلب مياه شرب نقية وتصلك في أسرع وقت</p>
+      </button>
+      <button onClick={() => onSelect("my-orders")} className="bubble-card p-8 flex flex-col items-center justify-center gap-4 group" data-testid="button-nav-my-orders">
+        <div className="w-20 h-20 bg-gradient-to-tr from-teal-400 to-emerald-500 rounded-full flex items-center justify-center shadow-lg shadow-teal-400/40 group-hover:scale-110 transition-transform duration-300">
+          <ListOrdered className="w-10 h-10 text-white" />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white">طلباتي</h2>
+        <p className="text-slate-500 text-center max-w-[200px]">تتبع طلباتك السابقة والحالية</p>
+      </button>
+    </div>
+  );
+}
+
+function NewOrderView({ onBack, onSuccess, userId, queryClient }: {
+  onBack: () => void; onSuccess: () => void;
+  userId: string; queryClient: ReturnType<typeof useQueryClient>;
+}) {
+  const [selectedVolumes, setSelectedVolumes] = useState<string[]>([]);
+  const [error, setError] = useState("");
+  const [gpsState, setGpsState] = useState<"idle" | "loading" | "acquired">("idle");
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const createOrderMutation = useCreateOrder();
+
+  const toggleVolume = (vol: string) => {
+    if (selectedVolumes.includes(vol)) {
+      setSelectedVolumes(prev => prev.filter(v => v !== vol));
+    } else {
+      if (selectedVolumes.length >= 3) return;
+      setSelectedVolumes(prev => [...prev, vol]);
+    }
+  };
+
+  const calculatePrice = () => {
+    if (selectedVolumes.length === 0) return 0;
+    const totalLiters = selectedVolumes.reduce((acc, vol) => {
+      const num = parseInt(vol.replace("ل", ""), 10);
+      return acc + (isNaN(num) ? 0 : num);
+    }, 0);
+    return totalLiters * 5;
+  };
+
+  const totalPrice = calculatePrice();
+
+  const handleLocate = () => {
+    if (!navigator.geolocation) { setError("المتصفح لا يدعم تحديد الموقع الجغرافي"); return; }
+    setGpsState("loading");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setGpsState("acquired"); setError(""); },
+      () => { setGpsState("idle"); setError("تعذّر تحديد موقعك. تأكد من منح الإذن للمتصفح."); },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleSubmit = () => {
+    if (selectedVolumes.length === 0) { setError("الرجاء اختيار حجم واحد على الأقل"); return; }
+    if (!coords) { setError("الرجاء تحديد موقعك الجغرافي أولاً"); return; }
+    createOrderMutation.mutate(
+      { data: { userId, waterVolume: selectedVolumes.join(", "), barrelCount: 1, totalPrice, latitude: coords.lat, longitude: coords.lng } },
+      {
+        onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetUserOrdersQueryKey(userId) }); onSuccess(); },
+        onError: (err: unknown) => {
+          const e = err as { response?: { data?: { error?: string } } };
+          setError(e?.response?.data?.error || "حدث خطأ في تقديم الطلب");
+        },
+      }
+    );
+  };
+
+  return (
+    <div className="flex flex-col animate-in slide-in-from-bottom-4 duration-300">
+      <div className="flex items-center mb-6">
+        <button onClick={onBack} className="p-2 mr-[-8px] text-slate-500 hover:text-primary transition-colors">
+          <ArrowRight className="w-6 h-6 ml-2" />
+        </button>
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-white">طلب مياه جديد</h1>
+      </div>
+
+      {error && <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-2xl mb-4">{error}</div>}
+
+      <div className="glass-panel rounded-3xl p-6 mb-6">
+        <div className="mb-6">
+          <button onClick={handleLocate} disabled={gpsState === "loading" || gpsState === "acquired"}
+            className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-bold text-base transition-all shadow-md active:scale-[0.98] ${
+              gpsState === "acquired"
+                ? "bg-emerald-500 text-white shadow-emerald-500/20 cursor-default"
+                : "bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 border-2 border-sky-300 dark:border-sky-700 hover:bg-sky-200"
+            }`} data-testid="button-locate">
+            {gpsState === "loading" ? <Loader2 className="w-5 h-5 animate-spin" /> : <MapPin className="w-5 h-5" />}
+            {gpsState === "acquired" ? "تم تحديد موقعك بدقة ✔" : gpsState === "loading" ? "جاري تحديد الموقع..." : "تحديد موقع منزلي تلقائياً"}
+          </button>
+          {coords && <p className="text-xs text-slate-400 text-center mt-2">{coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</p>}
+        </div>
+
+        <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Droplet className="w-5 h-5 text-primary" />اختر الحجم (اختر حتى 3)</h3>
+        <div className="flex flex-wrap gap-2 mb-6">
+          {VOLUMES.map(vol => (
+            <button key={vol} onClick={() => toggleVolume(vol)}
+              className={`px-4 py-2 rounded-xl border-2 transition-all font-medium ${
+                selectedVolumes.includes(vol)
+                  ? "bg-primary border-primary text-white shadow-md shadow-primary/20"
+                  : "bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-primary/40"
+              } ${selectedVolumes.length >= 3 && !selectedVolumes.includes(vol) ? "opacity-50 cursor-not-allowed" : ""}`}
+              data-testid={`volume-${vol}`}>{vol}</button>
+          ))}
+        </div>
+
+        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 flex justify-between items-center mb-6 border border-slate-100 dark:border-slate-800">
+          <span className="text-slate-500 font-medium">السعر الإجمالي:</span>
+          <span className="text-2xl font-bold text-primary" data-testid="text-total-price">{totalPrice} دج</span>
+        </div>
+
+        <button onClick={handleSubmit} disabled={createOrderMutation.isPending || selectedVolumes.length === 0 || !coords}
+          className="w-full bg-gradient-to-r from-primary to-cyan-500 hover:from-primary/90 hover:to-cyan-500/90 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/30 disabled:opacity-50"
+          data-testid="button-submit-order">
+          {createOrderMutation.isPending
+            ? <Loader2 className="w-6 h-6 animate-spin" />
+            : <><CheckCircle2 className="w-5 h-5" /><span>إتمام الطلب</span></>}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MyOrdersView({ onBack, userId, onDriverArrived, onDriverAccepted, queryClient }: {
+  onBack: () => void;
+  userId: string;
+  onDriverArrived: (orderId: string) => void;
+  onDriverAccepted: (info: DriverAcceptedInfo) => void;
+  queryClient: ReturnType<typeof useQueryClient>;
+}) {
+  const { data: orders, isLoading } = useGetUserOrders(userId, {
+    query: {
+      enabled: !!userId,
+      queryKey: getGetUserOrdersQueryKey(userId),
+      refetchInterval: 5000,
+    },
+  });
+
+  const cancelMutation = useCancelOrder();
+  const notifiedArrivalRef = useRef<Set<string>>(new Set());
+  const notifiedAcceptedRef = useRef<Set<string>>(new Set());
+
+  const [ratingModal, setRatingModal] = useState<{ orderId: string; driverId: string } | null>(null);
+  const [ratedOrders, setRatedOrders] = useState<Set<string>>(() => {
+    try { return new Set<string>(JSON.parse(localStorage.getItem("rated_orders_consumer") || "[]")); }
+    catch { return new Set<string>(); }
+  });
+
+  const checkEvents = useCallback(() => {
+    if (!orders) return;
+    for (const order of orders) {
+      if (order.status === "وصل السائق" && !notifiedArrivalRef.current.has(order.id)) {
+        notifiedArrivalRef.current.add(order.id);
+        onDriverArrived(order.id);
+      }
+      if (
+        order.status === "قيد التوصيل" &&
+        order.driverId &&
+        !notifiedAcceptedRef.current.has(order.id)
+      ) {
+        notifiedAcceptedRef.current.add(order.id);
+        onDriverAccepted({
+          orderId: order.id,
+          driverName: (order as any).driverName ?? null,
+          driverPhone: (order as any).driverPhone ?? null,
+        });
+      }
+    }
+  }, [orders, onDriverArrived, onDriverAccepted]);
+
+  useEffect(() => { checkEvents(); }, [checkEvents]);
+
+  const handleCancel = (orderId: string) => {
+    cancelMutation.mutate({ orderId }, {
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetUserOrdersQueryKey(userId) }),
+    });
+  };
+
+  const markRated = (orderId: string) => {
+    const next = new Set(ratedOrders);
+    next.add(orderId);
+    setRatedOrders(next);
+    try { localStorage.setItem("rated_orders_consumer", JSON.stringify([...next])); } catch { /* ignore */ }
+    setRatingModal(null);
+  };
+
+  return (
+    <div className="flex flex-col animate-in slide-in-from-bottom-4 duration-300 h-full">
+      {ratingModal && (
+        <RatingModal
+          orderId={ratingModal.orderId}
+          raterUserId={userId}
+          ratedUserId={ratingModal.driverId}
+          raterType="consumer"
+          ratedName="السائق"
+          onClose={() => setRatingModal(null)}
+          onSubmitted={() => markRated(ratingModal.orderId)}
+        />
+      )}
+      <div className="flex items-center mb-6">
+        <button onClick={onBack} className="p-2 mr-[-8px] text-slate-500 hover:text-primary transition-colors">
+          <ArrowRight className="w-6 h-6 ml-2" />
+        </button>
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-white">طلباتي</h1>
+        <span className="mr-2 text-xs text-slate-400">(يتحدث تلقائياً)</span>
+      </div>
+
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-20 text-primary">
+          <Loader2 className="w-10 h-10 animate-spin mb-4" /><p>جاري تحميل الطلبات...</p>
+        </div>
+      ) : !orders || orders.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-slate-400 glass-panel rounded-3xl">
+          <ShoppingBag className="w-16 h-16 mb-4 opacity-50" /><p className="text-lg">لا توجد طلبات سابقة</p>
+        </div>
+      ) : (
+        <div className="space-y-4 pb-10">
+          {orders.map(order => (
+            <div key={order.id}
+              className={`glass-panel p-5 rounded-3xl border-2 transition-all ${
+                order.status === "وصل السائق"
+                  ? "border-amber-400 shadow-amber-200 dark:shadow-amber-900/30 shadow-lg"
+                  : "border-transparent"
+              }`} data-testid={`order-card-${order.id}`}>
+              <div className="flex justify-between items-start mb-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex flex-col">
+                  <span className="font-bold text-lg text-slate-800 dark:text-white">{order.waterVolume}</span>
+                  <span className="text-xs text-slate-400">{format(new Date(order.createdAt), "dd/MM/yyyy HH:mm")}</span>
+                </div>
+                <div className="text-lg font-bold text-primary">{order.totalPrice} دج</div>
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <div className="flex items-center gap-2">
+                  {order.status === "معلق" && (
+                    <div className="flex items-center gap-1.5 text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full text-sm font-medium">
+                      <Clock className="w-4 h-4" /><span>معلق — بانتظار السائق</span>
+                    </div>
+                  )}
+                  {order.status === "قيد التوصيل" && (
+                    <div className="flex items-center gap-1.5 text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5 rounded-full text-sm font-medium animate-pulse">
+                      <Truck className="w-4 h-4" /><span>قيد التوصيل</span>
+                    </div>
+                  )}
+                  {order.status === "وصل السائق" && (
+                    <div className="flex items-center gap-1.5 text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-3 py-1.5 rounded-full text-sm font-bold">
+                      <Bell className="w-4 h-4 animate-bounce" /><span>وصل السائق!</span>
+                    </div>
+                  )}
+                  {order.status === "تم التوصيل" && (
+                    <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1.5 rounded-full text-sm font-medium">
+                      <CheckCircle2 className="w-4 h-4" /><span>تم التوصيل ✔</span>
+                    </div>
+                  )}
+                  {order.status === "تم التوصيل" && order.driverId && !ratedOrders.has(order.id) && (
+                    <button
+                      onClick={() => setRatingModal({ orderId: order.id, driverId: order.driverId! })}
+                      className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    >
+                      <Star className="w-3 h-3 fill-amber-500 text-amber-500" />قيّم التوصيل
+                    </button>
+                  )}
+                  {order.status === "تم التوصيل" && ratedOrders.has(order.id) && (
+                    <div className="flex items-center gap-1 text-xs text-slate-400 px-3 py-1.5">
+                      <Star className="w-3 h-3 fill-slate-300 text-slate-300" />تم التقييم
+                    </div>
+                  )}
+                  {order.status === "ملغى" && (
+                    <div className="flex items-center gap-1.5 text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-full text-sm font-medium">
+                      <XCircle className="w-4 h-4" /><span>ملغى</span>
+                    </div>
+                  )}
+                </div>
+                {order.status === "معلق" && (
+                  <button
+                    onClick={() => handleCancel(order.id)}
+                    disabled={cancelMutation.isPending}
+                    className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    data-testid={`button-cancel-${order.id}`}
+                  >
+                    {cancelMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
+                    إلغاء الطلبية
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

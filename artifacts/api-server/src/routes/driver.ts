@@ -1,0 +1,362 @@
+import { Router, type IRouter } from "express";
+import { eq, desc, sql } from "drizzle-orm";
+import { db, driverStatusTable, usersTable, ordersTable, subscriptionPaymentsTable, driverDetailsTable } from "@workspace/db";
+import { UpdateDriverStatusBody } from "@workspace/api-zod";
+
+const router: IRouter = Router();
+
+router.get("/driver/status", async (_req, res): Promise<void> => {
+  const statuses = await db
+    .select({
+      driverId: driverStatusTable.driverId,
+      driverName: usersTable.name,
+      currentStatus: driverStatusTable.currentStatus,
+      updatedAt: driverStatusTable.updatedAt,
+    })
+    .from(driverStatusTable)
+    .leftJoin(usersTable, eq(driverStatusTable.driverId, usersTable.id));
+
+  res.json(
+    statuses.map((s) => ({
+      driverId: s.driverId,
+      driverName: s.driverName ?? "سائق",
+      currentStatus: s.currentStatus,
+      updatedAt: s.updatedAt.toISOString(),
+    }))
+  );
+});
+
+router.post("/driver/status", async (req, res): Promise<void> => {
+  const parsed = UpdateDriverStatusBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { driverId, currentStatus } = parsed.data;
+
+  const [status] = await db
+    .insert(driverStatusTable)
+    .values({ driverId, currentStatus })
+    .onConflictDoUpdate({
+      target: driverStatusTable.driverId,
+      set: { currentStatus, updatedAt: new Date() },
+    })
+    .returning();
+
+  const [user] = await db
+    .select({ name: usersTable.name })
+    .from(usersTable)
+    .where(eq(usersTable.id, driverId));
+
+  req.log.info({ driverId, currentStatus }, "Driver status updated");
+
+  res.json({
+    driverId: status.driverId,
+    driverName: user?.name ?? "سائق",
+    currentStatus: status.currentStatus,
+    updatedAt: status.updatedAt.toISOString(),
+  });
+});
+
+router.get("/driver/:driverId/account", async (req, res): Promise<void> => {
+  const driverId = Array.isArray(req.params.driverId)
+    ? req.params.driverId[0]
+    : req.params.driverId;
+
+  const [user] = await db
+    .select({
+      accountStatus: usersTable.accountStatus,
+      subscriptionExpiresAt: usersTable.subscriptionExpiresAt,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, driverId));
+
+  if (!user) {
+    res.status(404).json({ error: "السائق غير موجود" });
+    return;
+  }
+
+  const now = new Date();
+  const subscriptionExpired =
+    user.subscriptionExpiresAt !== null &&
+    user.subscriptionExpiresAt !== undefined &&
+    user.subscriptionExpiresAt <= now;
+
+  res.json({
+    accountStatus: user.accountStatus,
+    subscriptionExpiresAt: user.subscriptionExpiresAt
+      ? user.subscriptionExpiresAt.toISOString()
+      : null,
+    subscriptionExpired,
+  });
+});
+
+router.patch("/driver/:driverId/account", async (req, res): Promise<void> => {
+  const driverId = Array.isArray(req.params.driverId)
+    ? req.params.driverId[0]
+    : req.params.driverId;
+
+  const { accountStatus, subscriptionExpiresAt } = req.body as {
+    accountStatus?: string;
+    subscriptionExpiresAt?: string | null;
+  };
+
+  if (
+    accountStatus !== undefined &&
+    accountStatus !== "pending" &&
+    accountStatus !== "active"
+  ) {
+    res.status(400).json({ error: "حالة الحساب غير صالحة" });
+    return;
+  }
+
+  const updateData: Record<string, unknown> = {};
+  if (accountStatus !== undefined) updateData.accountStatus = accountStatus;
+  if (subscriptionExpiresAt !== undefined) {
+    updateData.subscriptionExpiresAt =
+      subscriptionExpiresAt ? new Date(subscriptionExpiresAt) : null;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    res.status(400).json({ error: "لا توجد بيانات للتحديث" });
+    return;
+  }
+
+  const [updated] = await db
+    .update(usersTable)
+    .set(updateData)
+    .where(eq(usersTable.id, driverId))
+    .returning({
+      accountStatus: usersTable.accountStatus,
+      subscriptionExpiresAt: usersTable.subscriptionExpiresAt,
+    });
+
+  if (!updated) {
+    res.status(404).json({ error: "السائق غير موجود" });
+    return;
+  }
+
+  const now = new Date();
+  const subscriptionExpired =
+    updated.subscriptionExpiresAt !== null &&
+    updated.subscriptionExpiresAt !== undefined &&
+    updated.subscriptionExpiresAt <= now;
+
+  res.json({
+    accountStatus: updated.accountStatus,
+    subscriptionExpiresAt: updated.subscriptionExpiresAt
+      ? updated.subscriptionExpiresAt.toISOString()
+      : null,
+    subscriptionExpired,
+  });
+});
+
+// ─── Submit driver verification document URLs ────────────────────────────────
+// [تعديل 1 & 2]: لم تعد truckVideoUrl و truckSidePhotoUrl مطلوبتين
+// يُكتفى الآن بصورة الأمام ورخصة القيادة فقط
+router.post("/driver/:driverId/docs", async (req, res): Promise<void> => {
+  const driverId = Array.isArray(req.params.driverId)
+    ? req.params.driverId[0]
+    : req.params.driverId;
+
+  const { truckFrontPhotoUrl, driverLicenseUrl, truckVideoUrl, truckSidePhotoUrl } =
+    req.body as {
+      truckFrontPhotoUrl?: string;
+      driverLicenseUrl?: string;
+      truckVideoUrl?: string;       // اختياري — محتفظ به للتوافق مع القديم
+      truckSidePhotoUrl?: string;   // اختياري — محتفظ به للتوافق مع القديم
+    };
+
+  // التحقق من الحقول الإلزامية الجديدة فقط
+  if (!truckFrontPhotoUrl || !driverLicenseUrl) {
+    res.status(400).json({ error: "صورة الشاحنة من الأمام ورخصة القيادة مطلوبتان" });
+    return;
+  }
+
+  const [existing] = await db
+    .select({ driverId: driverDetailsTable.driverId })
+    .from(driverDetailsTable)
+    .where(eq(driverDetailsTable.driverId, driverId));
+
+  if (!existing) {
+    res.status(404).json({ error: "السائق غير موجود" });
+    return;
+  }
+
+  const [updated] = await db
+    .update(driverDetailsTable)
+    .set({
+      truckFrontPhotoUrl,
+      driverLicenseUrl,
+      truckVideoUrl:     truckVideoUrl     ?? "",
+      truckSidePhotoUrl: truckSidePhotoUrl ?? "",
+    })
+    .where(eq(driverDetailsTable.driverId, driverId))
+    .returning();
+
+  // ── Auto-activate: bypass pending state immediately after docs upload ──
+  await db
+    .update(usersTable)
+    .set({ accountStatus: "active" })
+    .where(eq(usersTable.id, driverId));
+
+  req.log.info({ driverId }, "Driver docs submitted — account auto-activated");
+
+  res.json({
+    driverId:           updated.driverId,
+    truckFrontPhotoUrl: updated.truckFrontPhotoUrl ?? null,
+    driverLicenseUrl:   updated.driverLicenseUrl   ?? null,
+    truckVideoUrl:      updated.truckVideoUrl       ?? null,
+    truckSidePhotoUrl:  updated.truckSidePhotoUrl   ?? null,
+    accountStatus:      "active",
+  });
+});
+
+router.get("/driver/:driverId/orders", async (req, res): Promise<void> => {
+  const driverId = Array.isArray(req.params.driverId)
+    ? req.params.driverId[0]
+    : req.params.driverId;
+
+  const orders = await db
+    .select({
+      id: ordersTable.id,
+      userId: ordersTable.userId,
+      driverId: ordersTable.driverId,
+      userName: usersTable.name,
+      userPhone: usersTable.phone,
+      waterVolume: ordersTable.waterVolume,
+      barrelCount: ordersTable.barrelCount,
+      totalPrice: ordersTable.totalPrice,
+      latitude: ordersTable.latitude,
+      longitude: ordersTable.longitude,
+      status: ordersTable.status,
+      createdAt: ordersTable.createdAt,
+    })
+    .from(ordersTable)
+    .leftJoin(usersTable, eq(ordersTable.userId, usersTable.id))
+    .where(
+      sql`${ordersTable.driverId} = ${driverId} AND ${ordersTable.status} IN ('قيد التوصيل', 'وصل السائق')`
+    )
+    .orderBy(desc(ordersTable.createdAt));
+
+  res.json(
+    orders.map((o) => ({
+      id: o.id,
+      userId: o.userId,
+      driverId: o.driverId ?? null,
+      userName: o.userName ?? null,
+      userPhone: o.userPhone ?? null,
+      waterVolume: o.waterVolume,
+      barrelCount: o.barrelCount,
+      totalPrice: Number(o.totalPrice),
+      latitude: o.latitude !== null ? Number(o.latitude) : null,
+      longitude: o.longitude !== null ? Number(o.longitude) : null,
+      status: o.status,
+      createdAt: o.createdAt.toISOString(),
+    }))
+  );
+});
+
+router.get("/driver/:driverId/subscription", async (req, res): Promise<void> => {
+  const driverId = Array.isArray(req.params.driverId)
+    ? req.params.driverId[0]
+    : req.params.driverId;
+
+  const [payment] = await db
+    .select()
+    .from(subscriptionPaymentsTable)
+    .where(eq(subscriptionPaymentsTable.driverId, driverId))
+    .orderBy(desc(subscriptionPaymentsTable.createdAt))
+    .limit(1);
+
+  if (!payment) {
+    res.status(404).json({ error: "لا توجد مدفوعات مسجلة" });
+    return;
+  }
+
+  res.json({
+    id: payment.id,
+    driverId: payment.driverId,
+    receiptImage: payment.receiptImage,
+    status: payment.status,
+    adminNotes: payment.adminNotes ?? null,
+    createdAt: payment.createdAt.toISOString(),
+    reviewedAt: payment.reviewedAt ? payment.reviewedAt.toISOString() : null,
+  });
+});
+
+router.post("/driver/:driverId/subscription", async (req, res): Promise<void> => {
+  const driverId = Array.isArray(req.params.driverId)
+    ? req.params.driverId[0]
+    : req.params.driverId;
+
+  const { receiptImage } = req.body as { receiptImage?: string };
+
+  if (!receiptImage || typeof receiptImage !== "string") {
+    res.status(400).json({ error: "صورة الوصل مطلوبة" });
+    return;
+  }
+
+  const [user] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.id, driverId));
+
+  if (!user) {
+    res.status(404).json({ error: "السائق غير موجود" });
+    return;
+  }
+
+  const [payment] = await db
+    .insert(subscriptionPaymentsTable)
+    .values({ driverId, receiptImage, status: "pending" })
+    .returning();
+
+  req.log.info({ driverId, paymentId: payment.id }, "Subscription receipt submitted");
+
+  res.status(201).json({
+    id: payment.id,
+    driverId: payment.driverId,
+    receiptImage: payment.receiptImage,
+    status: payment.status,
+    adminNotes: payment.adminNotes ?? null,
+    createdAt: payment.createdAt.toISOString(),
+    reviewedAt: payment.reviewedAt ? payment.reviewedAt.toISOString() : null,
+  });
+});
+
+router.post("/driver/:driverId/free-trial", async (req, res): Promise<void> => {
+  const driverId = Array.isArray(req.params.driverId)
+    ? req.params.driverId[0]
+    : req.params.driverId;
+
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.id, driverId));
+
+  if (!user) {
+    res.status(404).json({ error: "السائق غير موجود" });
+    return;
+  }
+  if (user.userType !== "سائق") {
+    res.status(403).json({ error: "مسموح فقط للسائقين" });
+    return;
+  }
+  if (user.subscriptionExpiresAt !== null) {
+    res.status(409).json({ error: "سبق أن استفدت من التجربة المجانية" });
+    return;
+  }
+
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  await db
+    .update(usersTable)
+    .set({ subscriptionExpiresAt: expiresAt })
+    .where(eq(usersTable.id, driverId));
+
+  req.log.info({ driverId, expiresAt }, "Free trial granted");
+  res.json({ subscriptionExpiresAt: expiresAt.toISOString(), trial: true });
+});
+
+export default router;
