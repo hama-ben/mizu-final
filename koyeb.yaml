@@ -1,0 +1,85 @@
+# Koyeb App configuration — version-controlled deployment settings.
+# Reference: https://www.koyeb.com/docs/apps/deploy-from-github
+#
+# HOW TO USE:
+#   1. In the Koyeb dashboard → Create App → GitHub
+#   2. Select your repo and branch "main"
+#   3. Koyeb detects this file automatically and pre-fills the form.
+#   4. Add the secret environment variables listed below via the dashboard
+#      (Koyeb dashboard → Secrets) — never commit real values here.
+
+name: talabati
+
+services:
+  - name: api-server
+    type: web
+
+    # ── Source ──────────────────────────────────────────────────────────────
+    git:
+      branch: main
+
+    # ── Build ────────────────────────────────────────────────────────────────
+    # Build runs from the repo root so pnpm workspace resolution works.
+    build:
+      buildpack:
+        build_command: pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build
+        run_command: node artifacts/api-server/dist/index.mjs
+
+    # ── Networking ───────────────────────────────────────────────────────────
+    ports:
+      - port: 8080
+        protocol: http
+
+    # ── Health check ─────────────────────────────────────────────────────────
+    health_checks:
+      - type: http
+        port: 8080
+        path: /api/health
+        grace_period: 10
+        interval: 30
+        timeout: 5
+        unhealthy_threshold: 3
+        healthy_threshold: 1
+
+    # ── Scaling ──────────────────────────────────────────────────────────────
+    scaling:
+      min: 1
+      max: 1
+
+    # ── Region ───────────────────────────────────────────────────────────────
+    # fra = Frankfurt. Change to was (Washington) or sin (Singapore) as needed.
+    regions:
+      - fra
+
+    # ── Environment variables ────────────────────────────────────────────────
+    # Non-secret values are set here directly.
+    # Secret values (marked below) must be added via the Koyeb dashboard → Secrets
+    # before the first deploy, then referenced by name.
+    env:
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: "8080"
+
+      # ── CORS ────────────────────────────────────────────────────────────────
+      # Set to your Vercel frontend URL, e.g. https://talabati.vercel.app
+      # Add additional origins separated by commas if you use a custom domain.
+      - key: CORS_ORIGIN
+        value: "https://talabati.vercel.app"
+
+      # ── Secrets — create these in Koyeb dashboard → Secrets ─────────────────
+      - key: DATABASE_URL
+        secret: DATABASE_URL
+
+      - key: SUPABASE_URL
+        secret: SUPABASE_URL
+
+      - key: SUPABASE_ANON_KEY
+        secret: SUPABASE_ANON_KEY
+
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        secret: SUPABASE_SERVICE_ROLE_KEY
+
+      - key: SESSION_SECRET
+        secret: SESSION_SECRET

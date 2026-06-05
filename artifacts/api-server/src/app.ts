@@ -26,7 +26,14 @@ app.use(
     },
   }),
 );
-app.use(cors());
+// In production, restrict CORS to the frontend origin declared in CORS_ORIGIN.
+// Multiple origins can be comma-separated: "https://a.com,https://b.com".
+// In development (no CORS_ORIGIN set) all origins are allowed so Replit's
+// proxy and local dev servers work without configuration.
+const corsOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
+  : true;
+app.use(cors({ origin: corsOrigins, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
