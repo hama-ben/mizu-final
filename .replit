@@ -55,7 +55,3 @@ externalPort = 3000
 [userenv]
 
 [userenv.shared]
-SUPABASE_URL = "https://etijovhzmhiyezuiwick.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0aWpvdmh6bWhpeWV6dWl3aWNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNzk2OTIsImV4cCI6MjA5NDc1NTY5Mn0.3YsFxw-j7ZbDfDPkYYenKQ_Vu5esZM7x-r6w_YwC__I"
-VITE_SUPABASE_URL = "https://etijovhzmhiyezuiwick.supabase.co"
-VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0aWpvdmh6bWhpeWV6dWl3aWNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNzk2OTIsImV4cCI6MjA5NDc1NTY5Mn0.3YsFxw-j7ZbDfDPkYYenKQ_Vu5esZM7x-r6w_YwC__I"
