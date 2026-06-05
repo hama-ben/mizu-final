@@ -33,9 +33,11 @@ router.get("/health", async (_req, res) => {
   try {
     const { error } = await client.from("_health_probe").select("1").limit(1);
 
-    // A "relation does not exist" error (code 42P01) means the DB is reachable
-    // but the table doesn't exist — that still counts as a healthy connection.
-    if (error && error.code !== "42P01") {
+    // A missing-table error means the DB is reachable but the probe table
+    // doesn't exist — still counts as healthy.
+    // 42P01  = PostgreSQL native "undefined_table"
+    // PGRST205 = PostgREST schema-cache equivalent (returned via Supabase REST)
+    if (error && error.code !== "42P01" && error.code !== "PGRST205") {
       logger.warn({ err: error }, "Health check: Supabase probe failed");
       res.status(503).json({
         status: "error",
