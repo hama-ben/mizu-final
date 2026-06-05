@@ -2,8 +2,79 @@ import { Router, type IRouter } from "express";
 import { eq, desc, sql } from "drizzle-orm";
 import { db, driverStatusTable, usersTable, ordersTable, subscriptionPaymentsTable, driverDetailsTable } from "@workspace/db";
 import { UpdateDriverStatusBody } from "@workspace/api-zod";
+import multer from "multer";
+import { getSupabaseServer } from "../lib/supabase-server";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+// ── File upload via service-role Supabase client ─────────────────────────────
+// The frontend cannot upload directly to Supabase storage because the new
+// project has RLS enabled with no anon-insert policy. The service-role key
+// bypasses RLS entirely and must stay server-side.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — matches bucket limit
+  fileFilter: (_req, file, cb) => {
+    const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp", "video/mp4", "video/quicktime"];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
+
+const DRIVER_DOCS_BUCKET = "driver-verification";
+const ALLOWED_SLOTS = ["truck-front", "license"] as const;
+type UploadSlot = typeof ALLOWED_SLOTS[number];
+
+router.post("/driver/upload-file", upload.single("file"), async (req, res): Promise<void> => {
+  const { driverId, slot } = req.body as { driverId?: string; slot?: string };
+
+  if (!driverId || !slot) {
+    res.status(400).json({ error: "driverId و slot مطلوبان" });
+    return;
+  }
+
+  if (!ALLOWED_SLOTS.includes(slot as UploadSlot)) {
+    res.status(400).json({ error: "قيمة slot غير صالحة" });
+    return;
+  }
+
+  if (!req.file) {
+    res.status(400).json({ error: "لم يتم إرفاق ملف" });
+    return;
+  }
+
+  const client = getSupabaseServer();
+  if (!client) {
+    res.status(503).json({ error: "خدمة التخزين غير متاحة" });
+    return;
+  }
+
+  try {
+    const ext = req.file.originalname.split(".").pop() ?? "bin";
+    const storagePath = `${driverId}/${slot}.${ext}`;
+
+    const { error: uploadError } = await client.storage
+      .from(DRIVER_DOCS_BUCKET)
+      .upload(storagePath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      logger.warn({ err: uploadError.message, driverId, slot }, "Driver file upload failed");
+      res.status(500).json({ error: `فشل رفع الملف: ${uploadError.message}` });
+      return;
+    }
+
+    const { data } = client.storage.from(DRIVER_DOCS_BUCKET).getPublicUrl(storagePath);
+    logger.info({ driverId, slot, path: storagePath }, "Driver file uploaded via service role");
+    res.json({ url: data.publicUrl });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err, driverId, slot }, "Unexpected error during driver file upload");
+    res.status(500).json({ error: msg });
+  }
+});
 
 router.get("/driver/status", async (_req, res): Promise<void> => {
   const statuses = await db

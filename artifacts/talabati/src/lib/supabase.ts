@@ -19,38 +19,40 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 export const DRIVER_DOCS_BUCKET = "driver-verification";
 
 /**
- * Upload a single File to the public Supabase Storage bucket "driver-verification".
- * - Bucket has RLS disabled → the anon key is sufficient, no extra auth headers needed.
- * - upsert: true  → idempotent; re-uploading replaces the previous file.
- * - getPublicUrl  → returns the permanent public URL stored in the DB.
+ * Upload a driver file by proxying through the API server.
+ *
+ * The new Supabase project has RLS enabled on storage.objects with no anon-insert
+ * policy, so direct browser uploads with the anon key are blocked. The API server
+ * holds the service_role key which bypasses RLS — files are uploaded server-side
+ * and the public URL is returned here.
+ *
+ * The service_role key never touches the client. This is also more secure.
  */
 export async function uploadDriverFile(
   driverId: string,
   slot: "truck-front" | "license",
   file: File
 ): Promise<string> {
-  const ext  = file.name.split(".").pop() ?? "bin";
-  const path = `${driverId}/${slot}.${ext}`;
+  const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined ?? "").replace(/\/+$/, "");
 
-  // Use the vanilla storage client — no custom Authorization headers, no service role key.
-  // The bucket is public (RLS off), so the anon key is enough.
-  const { error } = await supabase.storage
-    .from(DRIVER_DOCS_BUCKET)
-    .upload(path, file, {
-      upsert:      true,
-      contentType: file.type,
-    });
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  formData.append("driverId", driverId);
+  formData.append("slot", slot);
 
-  if (error) {
-    throw new Error(`فشل رفع الملف (${slot}): ${error.message}`);
+  const res = await fetch(`${apiBase}/api/driver/upload-file`, {
+    method: "POST",
+    body: formData,
+    // Do NOT set Content-Type — the browser sets it with the correct multipart boundary.
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `فشل رفع الملف (${slot}): HTTP ${res.status}`);
   }
 
-  // getPublicUrl never throws — it always returns a well-formed URL for public buckets.
-  const { data } = supabase.storage
-    .from(DRIVER_DOCS_BUCKET)
-    .getPublicUrl(path);
-
-  return data.publicUrl;
+  const data = await res.json() as { url: string };
+  return data.url;
 }
 
 /**
