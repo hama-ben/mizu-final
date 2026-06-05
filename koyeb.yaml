@@ -19,10 +19,23 @@ services:
       branch: main
 
     # ── Build ────────────────────────────────────────────────────────────────
-    # Build runs from the repo root so pnpm workspace resolution works.
+    # Pipeline: install → migrate → build → run
+    #
+    # Migration runs during the BUILD phase (not startup) so that:
+    #   • It only runs once per deploy, not on every pod restart.
+    #   • A migration failure aborts the build — Koyeb keeps the previous
+    #     healthy instance running rather than replacing it with a broken one.
+    #   • DATABASE_URL is injected by Koyeb into the build environment
+    #     exactly the same as the runtime environment.
+    #
+    # drizzle-kit push applies schema changes that are safe (add column/table).
+    # For DESTRUCTIVE changes (drop column/table), drizzle-kit will prompt
+    # interactively — which hangs in CI. To approve a destructive migration,
+    # temporarily change the migrate script to use "push --force", deploy once,
+    # then revert.  Never leave --force permanently in the pipeline.
     build:
       buildpack:
-        build_command: pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build
+        build_command: pnpm install --frozen-lockfile && pnpm run db:migrate && pnpm --filter @workspace/api-server run build
         run_command: node artifacts/api-server/dist/index.mjs
 
     # ── Networking ───────────────────────────────────────────────────────────
