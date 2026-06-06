@@ -76,10 +76,11 @@ services:
         value: "8080"
 
       # ── CORS ────────────────────────────────────────────────────────────────
-      # Set to your Vercel frontend URL, e.g. https://talabati.vercel.app
-      # Add additional origins separated by commas if you use a custom domain.
+      # Comma-separated list of allowed frontend origins.
+      # The api-server also has these baked in as a fallback (KNOWN_ORIGINS in app.ts),
+      # so both must be updated when adding a new domain.
       - key: CORS_ORIGIN
-        value: "https://talabati.vercel.app"
+        value: "https://mellow-naiad-f2a5d9.netlify.app"
 
       # ── Secrets — create these in Koyeb dashboard → Secrets ─────────────────
       - key: DATABASE_URL
