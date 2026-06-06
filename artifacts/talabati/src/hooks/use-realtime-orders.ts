@@ -22,6 +22,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getGetActiveOrdersQueryKey } from "@workspace/api-client-react";
 
+const EVENT_ORDER_CLAIMED = "order_claimed";
+
 export function useRealtimeOrders(driverId: string, currentOrderCount: number) {
   const queryClient = useQueryClient();
   const [notification, setNotification] = useState(false);
@@ -64,6 +66,20 @@ export function useRealtimeOrders(driverId: string, currentOrderCount: number) {
           queryClient.invalidateQueries({
             queryKey: getGetActiveOrdersQueryKey({ driverId }),
           });
+        })
+        .on("broadcast", { event: EVENT_ORDER_CLAIMED }, (payload: { payload?: { orderId?: string } }) => {
+          // Another driver claimed an order — remove it from this driver's
+          // active list immediately without waiting for the next poll.
+          const claimedId = payload?.payload?.orderId;
+          if (!claimedId) return;
+
+          queryClient.setQueryData(
+            getGetActiveOrdersQueryKey({ driverId }),
+            (old: unknown) => {
+              if (!Array.isArray(old)) return old;
+              return old.filter((o: { id: string }) => o.id !== claimedId);
+            }
+          );
         })
         .subscribe((status, err) => {
           // Handle all non-ok statuses silently — a transport failure here

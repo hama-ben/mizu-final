@@ -14,6 +14,8 @@ import { createClient, type SupabaseClient, type RealtimeChannel } from "@supaba
 import { logger } from "./logger";
 
 export const ORDERS_CHANNEL = "orders:new";
+export const EVENT_NEW_ORDER    = "new_order";
+export const EVENT_ORDER_CLAIMED = "order_claimed";
 
 // ── Singleton client ──────────────────────────────────────────────────────────
 
@@ -73,6 +75,28 @@ export function initRealtimeBroadcast(): void {
       logger.warn({ channel: ORDERS_CHANNEL }, "Realtime channel closed");
     }
   });
+}
+
+/**
+ * Broadcast an order-claimed event so all other drivers immediately know
+ * that orderId is no longer available without waiting for their next poll.
+ * Fire-and-forget — failure is logged, never thrown.
+ */
+export async function broadcastOrderClaimed(orderId: string): Promise<void> {
+  if (!_channel || !_channelReady) {
+    logger.debug("broadcastOrderClaimed: channel not ready — skipping");
+    return;
+  }
+  try {
+    await _channel.send({
+      type: "broadcast",
+      event: EVENT_ORDER_CLAIMED,
+      payload: { orderId },
+    });
+    logger.debug({ orderId }, "Order claimed broadcast sent");
+  } catch (err) {
+    logger.warn({ err }, "broadcastOrderClaimed: send failed");
+  }
 }
 
 /**

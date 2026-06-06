@@ -331,54 +331,44 @@ function SummaryStats() {
 // ─────────────────────────────────────────────────────────────────────────────
 function SubscriptionCountdown({ expiresAt }: { expiresAt: string }) {
   const [, setLocation] = useLocation();
-  const [secondsLeft, setSecondsLeft] = useState(() => {
-    const diff = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000);
-    return Math.max(0, diff);
-  });
+  const { t } = useTranslation();
+
+  const getSecondsLeft = () =>
+    Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+
+  const [secondsLeft, setSecondsLeft] = useState(getSecondsLeft);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setSecondsLeft(prev => Math.max(0, prev - 1));
-    }, 1000);
+    const id = setInterval(() => setSecondsLeft(getSecondsLeft()), 60_000);
     return () => clearInterval(id);
-  }, []);
+  }, [expiresAt]);
 
   const days    = Math.floor(secondsLeft / 86400);
   const hours   = Math.floor((secondsLeft % 86400) / 3600);
   const minutes = Math.floor((secondsLeft % 3600) / 60);
-  const secs    = secondsLeft % 60;
-  const isExpired  = secondsLeft === 0;
-  const isWarning  = !isExpired && secondsLeft < 3 * 24 * 3600; // < 3 days
-  const { t } = useTranslation();
+  const isExpired = secondsLeft === 0;
+  const isWarning = !isExpired && secondsLeft < 3 * 24 * 3600;
+
+  const color = isExpired
+    ? { border: "border-destructive", bg: "bg-destructive/5", text: "text-destructive", unit: "bg-destructive/10 text-destructive", bar: "bg-destructive" }
+    : isWarning
+    ? { border: "border-amber-400", bg: "bg-amber-50/30 dark:bg-amber-900/10", text: "text-amber-700 dark:text-amber-300", unit: "bg-amber-100 dark:bg-amber-900/30 text-amber-600", bar: "bg-amber-400" }
+    : { border: "border-primary/20", bg: "bg-primary/5", text: "text-primary", unit: "bg-primary/10 text-primary", bar: "bg-primary" };
 
   return (
     <div
-      className={`glass-panel rounded-3xl p-4 border-2 transition-all ${
-        isExpired  ? "border-destructive bg-destructive/5"
-        : isWarning ? "border-amber-400 bg-amber-50/30 dark:bg-amber-900/10"
-        : "border-primary/20 bg-primary/5"
-      }`}
+      className={`glass-panel rounded-3xl p-4 border-2 transition-all ${color.border} ${color.bg}`}
       dir="rtl"
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-            isExpired ? "bg-destructive/10 text-destructive"
-            : isWarning ? "bg-amber-100 dark:bg-amber-900/30 text-amber-600"
-            : "bg-primary/10 text-primary"
-          }`}>
-            {isExpired ? <AlertTriangle className="w-5 h-5" /> : <CalendarDays className="w-5 h-5" />}
+      {/* Label row */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${color.unit}`}>
+            {isExpired ? <AlertTriangle className="w-4 h-4" /> : <CalendarDays className="w-4 h-4" />}
           </div>
-          <div>
-            <p className={`text-xs font-bold ${isExpired ? "text-destructive" : isWarning ? "text-amber-700 dark:text-amber-300" : "text-primary"}`}>
-              {isExpired ? t("driver.subscription.expired") : isWarning ? t("driver.subscription.warning") : t("driver.subscription.active")}
-            </p>
-            {!isExpired && (
-              <p className="text-xs text-slate-400 font-mono tabular-nums">
-                {days > 0 ? `${days}ي ` : ""}{String(hours).padStart(2,"0")}:{String(minutes).padStart(2,"0")}:{String(secs).padStart(2,"0")}
-              </p>
-            )}
-          </div>
+          <p className={`text-xs font-bold ${color.text}`}>
+            {isExpired ? t("driver.subscription.expired") : isWarning ? t("driver.subscription.warning") : t("driver.subscription.active")}
+          </p>
         </div>
         <button
           onClick={() => setLocation("/subscription")}
@@ -391,10 +381,28 @@ function SubscriptionCountdown({ expiresAt }: { expiresAt: string }) {
           {isExpired || isWarning ? t("driver.subscription.renew") : t("driver.subscription.view")}
         </button>
       </div>
+
+      {/* Days / Hours / Minutes boxes */}
       {!isExpired && (
-        <div className="mt-3 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {[
+            { value: days,    label: "أيام" },
+            { value: hours,   label: "ساعات" },
+            { value: minutes, label: "دقائق" },
+          ].map(({ value, label }) => (
+            <div key={label} className={`rounded-2xl py-2 px-1 text-center ${color.unit}`}>
+              <p className="text-2xl font-black tabular-nums leading-none">{String(value).padStart(2, "0")}</p>
+              <p className="text-[10px] font-bold mt-0.5 opacity-80">{label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Progress bar */}
+      {!isExpired && (
+        <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-1000 ${isWarning ? "bg-amber-400" : "bg-primary"}`}
+            className={`h-full rounded-full transition-all ${color.bar}`}
             style={{ width: `${Math.min(100, (secondsLeft / (30 * 24 * 3600)) * 100)}%` }}
           />
         </div>

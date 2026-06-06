@@ -139,6 +139,7 @@ router.get("/driver/:driverId/account", async (req, res): Promise<void> => {
     .select({
       accountStatus: usersTable.accountStatus,
       subscriptionExpiresAt: usersTable.subscriptionExpiresAt,
+      freeTrialClaimed: usersTable.freeTrialClaimed,
     })
     .from(usersTable)
     .where(eq(usersTable.id, driverId));
@@ -160,6 +161,7 @@ router.get("/driver/:driverId/account", async (req, res): Promise<void> => {
       ? user.subscriptionExpiresAt.toISOString()
       : null,
     subscriptionExpired,
+    freeTrialClaimed: user.freeTrialClaimed ?? false,
   });
 });
 
@@ -422,15 +424,15 @@ router.post("/driver/:driverId/free-trial", async (req, res): Promise<void> => {
     res.status(403).json({ error: "مسموح فقط للسائقين" });
     return;
   }
-  if (user.subscriptionExpiresAt !== null) {
-    res.status(409).json({ error: "سبق أن استفدت من التجربة المجانية" });
+  if (user.freeTrialClaimed) {
+    res.status(409).json({ error: "لقد استخدمت نسختك التجريبية المجانية مسبقاً" });
     return;
   }
 
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   await db
     .update(usersTable)
-    .set({ subscriptionExpiresAt: expiresAt })
+    .set({ subscriptionExpiresAt: expiresAt, freeTrialClaimed: true })
     .where(eq(usersTable.id, driverId));
 
   req.log.info({ driverId, expiresAt }, "Free trial granted");

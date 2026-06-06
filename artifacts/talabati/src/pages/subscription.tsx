@@ -23,6 +23,7 @@ import {
   AlertCircle,
   Banknote,
   Phone,
+  Gift,
 } from "lucide-react";
 
 export default function SubscriptionPage() {
@@ -67,6 +68,30 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
   });
 
   const submitMutation = useSubmitSubscriptionReceipt();
+
+  // Free trial state
+  const freeTrialClaimed = (account as Record<string, unknown> | undefined)?.freeTrialClaimed === true;
+  const [freeTrialLoading, setFreeTrialLoading] = useState(false);
+  const [freeTrialError, setFreeTrialError] = useState<string | null>(null);
+
+  const handleClaimFreeTrial = async () => {
+    setFreeTrialLoading(true);
+    setFreeTrialError(null);
+    try {
+      const res = await fetch(`/api/driver/${driverId}/free-trial`, { method: "POST" });
+      if (res.ok) {
+        await queryClient.invalidateQueries({ queryKey: getGetDriverAccountQueryKey(driverId) });
+        setLocation("/driver-dashboard");
+        return;
+      }
+      const body = await res.json().catch(() => ({}));
+      setFreeTrialError((body as { error?: string }).error ?? "حدث خطأ. حاول مجدداً.");
+    } catch {
+      setFreeTrialError("حدث خطأ في الاتصال. حاول مجدداً.");
+    } finally {
+      setFreeTrialLoading(false);
+    }
+  };
 
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -135,6 +160,55 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
           <p className="text-sm text-slate-500">{t("subscription.subtitle")}</p>
         </div>
       </div>
+
+      {/* Free Trial card — only for first-time drivers */}
+      {neverSubscribed && (
+        <div className="glass-panel rounded-3xl p-6 border-2 border-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/10 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-2xl flex items-center justify-center text-emerald-600">
+              <Gift className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-800 dark:text-white">تجربة مجانية لـ 30 يوماً</h2>
+              <p className="text-sm text-slate-500">مرة واحدة فقط لكل سائق</p>
+            </div>
+          </div>
+
+          <p className="text-sm text-slate-600 dark:text-slate-300 leading-loose">
+            بما أنك تنضم إلينا لأول مرة، يمكنك تفعيل <strong>30 يوماً مجاناً</strong> بضغطة زر واحدة. تُمكّنك هذه الفترة من استقبال الطلبات دون أي رسوم.
+          </p>
+
+          {freeTrialError && (
+            <div className="flex items-center gap-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-2xl p-3">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+              <p className="text-sm text-red-700 dark:text-red-300">{freeTrialError}</p>
+            </div>
+          )}
+
+          <button
+            onClick={handleClaimFreeTrial}
+            disabled={freeTrialLoading || freeTrialClaimed}
+            className="w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 shadow-lg shadow-emerald-500/25 hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {freeTrialLoading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                جارٍ التفعيل...
+              </>
+            ) : freeTrialClaimed ? (
+              <>
+                <CheckCircle2 className="w-5 h-5" />
+                تم استخدام التجربة المجانية
+              </>
+            ) : (
+              <>
+                <Gift className="w-5 h-5" />
+                الحصول على التجربة المجانية
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Subscription info card */}
       <div className="glass-panel rounded-3xl p-6 border border-primary/20">

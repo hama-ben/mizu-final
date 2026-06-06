@@ -12,6 +12,7 @@ export const usersTable = pgTable("users", {
   commune: text("commune").notNull().default(""),
   accountStatus: text("account_status").notNull().default("pending"),
   subscriptionExpiresAt: timestamp("subscription_expires_at"),
+  freeTrialClaimed: boolean("free_trial_claimed").notNull().default(false),
 });
 
 export const driverStatusTable = pgTable("driver_status", {

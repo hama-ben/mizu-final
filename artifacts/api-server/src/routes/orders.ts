@@ -10,7 +10,7 @@ import {
   GetActiveOrdersResponse,
   GetOrdersSummaryResponse,
 } from "@workspace/api-zod";
-import { broadcastNewOrder } from "../lib/supabase-server";
+import { broadcastNewOrder, broadcastOrderClaimed } from "../lib/supabase-server";
 
 const router: IRouter = Router();
 
@@ -363,6 +363,9 @@ router.post("/orders/:orderId/accept", async (req, res): Promise<void> => {
     .where(eq(usersTable.id, order.userId));
 
   req.log.info({ orderId, driverId }, "Order accepted by driver");
+
+  // Fire-and-forget: notify all other drivers that this order is gone
+  broadcastOrderClaimed(orderId);
 
   res.json(mapOrder({
     ...order,
