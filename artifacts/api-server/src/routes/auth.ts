@@ -431,14 +431,135 @@ router.post("/auth/logout", (req, res): void => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Reset password (OTP-verified on frontend via Supabase)
-// Frontend verifies OTP ownership, then POSTs new password here.
+// In-memory reset-token store (server-issued after OTP verification)
+// TTL = 10 min; token is single-use
+// ─────────────────────────────────────────────────────────────────────────────
+const RESET_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+interface PendingReset {
+  email: string;
+  expiresAt: number;
+}
+
+const resetTokenStore = new Map<string, PendingReset>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of resetTokenStore) {
+    if (val.expiresAt < now) resetTokenStore.delete(key);
+  }
+}, 5 * 60 * 1000);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Step 1 (password reset): Send Supabase OTP to email
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/auth/send-reset-otp", async (req, res): Promise<void> => {
+  const { email } = req.body as { email?: string };
+  if (!email?.trim()) {
+    res.status(400).json({ error: "البريد الإلكتروني مطلوب" });
+    return;
+  }
+
+  // Check that the user account actually exists before sending an OTP
+  try {
+    const [found] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.email, email.trim()));
+
+    if (!found) {
+      // Return same response to avoid email-enumeration attacks
+      res.status(202).json({ message: "تم إرسال رمز التحقق إذا كان البريد مسجلاً" });
+      return;
+    }
+  } catch (err) {
+    const { status, message } = handleDbError(err, "send-reset-otp lookup");
+    res.status(status).json({ error: message });
+    return;
+  }
+
+  let supabase: SupabaseClient;
+  try {
+    supabase = getSupabase();
+  } catch (configErr) {
+    const msg = configErr instanceof Error ? configErr.message : "خطأ في إعدادات Supabase";
+    res.status(503).json({ error: msg });
+    return;
+  }
+
+  const { error: otpError } = await supabase.auth.signInWithOtp({
+    email: email.trim(),
+    options: { shouldCreateUser: false },
+  });
+
+  if (otpError) {
+    req.log.warn({ email: email.trim(), err: otpError.message }, "send-reset-otp: Supabase OTP failed");
+    // Return 202 regardless to avoid leaking user info
+    res.status(202).json({ message: "تم إرسال رمز التحقق إذا كان البريد مسجلاً" });
+    return;
+  }
+
+  req.log.info({ email: email.trim() }, "✅ Password-reset OTP sent");
+  res.status(202).json({ message: "تم إرسال رمز التحقق على بريدك الإلكتروني" });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Step 2 (password reset): Verify OTP server-side → issue short-lived resetToken
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/auth/verify-reset-otp", async (req, res): Promise<void> => {
+  const { email, otp } = req.body as { email?: string; otp?: string };
+
+  if (!email || !otp) {
+    res.status(400).json({ error: "البريد الإلكتروني والرمز مطلوبان" });
+    return;
+  }
+
+  if (!/^\d{6}$/.test(otp.trim())) {
+    res.status(400).json({ error: "رمز التحقق يجب أن يكون مكوّناً من 6 أرقام" });
+    return;
+  }
+
+  let supabase: SupabaseClient;
+  try {
+    supabase = getSupabase();
+  } catch (configErr) {
+    const msg = configErr instanceof Error ? configErr.message : "خطأ في إعدادات Supabase";
+    res.status(503).json({ error: msg });
+    return;
+  }
+
+  const { error: verifyError } = await supabase.auth.verifyOtp({
+    email: email.trim(),
+    token: otp.trim(),
+    type: "email",
+  });
+
+  if (verifyError) {
+    req.log.warn({ email: email.trim(), err: verifyError.message }, "verify-reset-otp: Supabase OTP rejected");
+    res.status(400).json({ error: "رمز التحقق غير صحيح أو منتهي الصلاحية" });
+    return;
+  }
+
+  // OTP verified — issue a single-use, time-limited reset token
+  const resetToken = crypto.randomUUID();
+  resetTokenStore.set(resetToken, {
+    email: email.trim(),
+    expiresAt: Date.now() + RESET_TOKEN_TTL_MS,
+  });
+
+  req.log.info({ email: email.trim() }, "✅ Password-reset OTP verified, resetToken issued");
+  res.json({ resetToken });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Step 3 (password reset): Exchange server-issued resetToken for password update
+// Requires the server-issued token — direct API calls without a valid token fail
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/auth/reset-password", async (req, res): Promise<void> => {
-  const { email, newPassword } = req.body as { email?: string; newPassword?: string };
+  const { resetToken, newPassword } = req.body as { resetToken?: string; newPassword?: string };
 
-  if (!email || !newPassword) {
-    res.status(400).json({ error: "البريد الإلكتروني وكلمة المرور الجديدة مطلوبان" });
+  if (!resetToken || !newPassword) {
+    res.status(400).json({ error: "رمز التحقق وكلمة المرور الجديدة مطلوبان" });
     return;
   }
 
@@ -447,21 +568,35 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
     return;
   }
 
+  const pending = resetTokenStore.get(resetToken);
+  if (!pending) {
+    res.status(400).json({ error: "رمز إعادة التعيين غير صالح أو منتهي الصلاحية" });
+    return;
+  }
+  if (Date.now() > pending.expiresAt) {
+    resetTokenStore.delete(resetToken);
+    res.status(400).json({ error: "انتهت صلاحية رمز إعادة التعيين — يرجى البدء من جديد" });
+    return;
+  }
+
+  // Single-use: delete before updating to prevent replay
+  resetTokenStore.delete(resetToken);
+
   const passwordHash = hashPassword(newPassword);
 
   try {
     const result = await db
       .update(usersTable)
       .set({ passwordHash })
-      .where(eq(usersTable.email, email.trim()))
+      .where(eq(usersTable.email, pending.email))
       .returning({ id: usersTable.id });
 
     if (result.length === 0) {
-      res.status(404).json({ error: "البريد الإلكتروني غير مسجل" });
+      res.status(404).json({ error: "الحساب غير موجود" });
       return;
     }
 
-    logger.info({ userId: result[0].id }, "✅ Password reset via OTP flow");
+    logger.info({ userId: result[0].id }, "✅ Password reset via server-verified OTP token");
     res.json({ message: "تم تحديث كلمة المرور بنجاح" });
   } catch (err) {
     const { status, message } = handleDbError(err, "reset-password update");

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/layout";
+import { useTranslation } from "@/lib/i18n";
 import {
   useGetActiveOrders,
   getGetActiveOrdersQueryKey,
@@ -295,6 +296,7 @@ function DriverRatingModal({ orderId, driverId, consumerUserId, consumerName, on
 // Summary stats bar
 // ─────────────────────────────────────────────────────────────────────────────
 function SummaryStats() {
+  const { t } = useTranslation();
   const { data: summary } = useGetOrdersSummary({
     query: { queryKey: getGetOrdersSummaryQueryKey(), refetchInterval: 15000 }
   });
@@ -302,15 +304,15 @@ function SummaryStats() {
   return (
     <div className="grid grid-cols-3 gap-3">
       <div className="glass-panel p-3 flex flex-col items-center rounded-2xl">
-        <span className="text-xs text-slate-500 font-medium">الإجمالي</span>
+        <span className="text-xs text-slate-500 font-medium">{t("driver.stats.total")}</span>
         <span className="text-xl font-bold text-slate-800 dark:text-white">{summary.total}</span>
       </div>
       <div className="glass-panel p-3 flex flex-col items-center rounded-2xl bg-amber-50/50 dark:bg-amber-900/10">
-        <span className="text-xs text-amber-600 font-medium">قيد التوصيل</span>
+        <span className="text-xs text-amber-600 font-medium">{t("driver.stats.inDelivery")}</span>
         <span className="text-xl font-bold text-amber-700">{summary.inDelivery}</span>
       </div>
       <div className="glass-panel p-3 flex flex-col items-center rounded-2xl bg-emerald-50/50 dark:bg-emerald-900/10">
-        <span className="text-xs text-emerald-600 font-medium">مكتمل</span>
+        <span className="text-xs text-emerald-600 font-medium">{t("driver.stats.completed")}</span>
         <span className="text-xl font-bold text-emerald-700">{summary.delivered}</span>
       </div>
     </div>
@@ -340,6 +342,7 @@ function SubscriptionCountdown({ expiresAt }: { expiresAt: string }) {
   const secs    = secondsLeft % 60;
   const isExpired  = secondsLeft === 0;
   const isWarning  = !isExpired && secondsLeft < 3 * 24 * 3600; // < 3 days
+  const { t } = useTranslation();
 
   return (
     <div
@@ -361,7 +364,7 @@ function SubscriptionCountdown({ expiresAt }: { expiresAt: string }) {
           </div>
           <div>
             <p className={`text-xs font-bold ${isExpired ? "text-destructive" : isWarning ? "text-amber-700 dark:text-amber-300" : "text-primary"}`}>
-              {isExpired ? "انتهى الاشتراك!" : isWarning ? "⚠️ اشتراكك ينتهي قريباً" : "الاشتراك الشهري نشط"}
+              {isExpired ? t("driver.subscription.expired") : isWarning ? t("driver.subscription.warning") : t("driver.subscription.active")}
             </p>
             {!isExpired && (
               <p className="text-xs text-slate-400 font-mono tabular-nums">
@@ -378,7 +381,7 @@ function SubscriptionCountdown({ expiresAt }: { expiresAt: string }) {
               : "bg-primary/10 text-primary hover:bg-primary/20"
           }`}
         >
-          {isExpired || isWarning ? "تجديد الاشتراك" : "عرض"}
+          {isExpired || isWarning ? t("driver.subscription.renew") : t("driver.subscription.view")}
         </button>
       </div>
       {!isExpired && (
@@ -431,20 +434,22 @@ function AttendanceControl({
     onStatusChange(s, updateStatusMutation.mutate);
   };
 
+  const { t } = useTranslation();
+
   return (
     <div className="glass-panel p-5 rounded-3xl">
-      <h3 className="font-bold text-slate-800 dark:text-white mb-4 text-center">حالة التواجد</h3>
+      <h3 className="font-bold text-slate-800 dark:text-white mb-4 text-center">{t("driver.attendance")}</h3>
       <div className="relative bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-full flex h-14" dir="rtl">
         <div className={`absolute top-1.5 bottom-1.5 w-[calc(33.333%-4px)] rounded-full transition-all duration-300 shadow-lg ${getStatusColor()} ${getStatusOffset()}`} />
         <button onClick={() => change("حاضر")}
           className={`flex-1 relative z-10 flex items-center justify-center gap-1.5 font-bold text-sm transition-colors duration-300 ${currentStatus === "حاضر" ? "text-white" : "text-slate-500"}`}
-          data-testid="status-active"><PlayCircle className="w-4 h-4" /> حاضر</button>
+          data-testid="status-active"><PlayCircle className="w-4 h-4" /> {t("driver.status.active")}</button>
         <button onClick={() => change("استراحة")}
           className={`flex-1 relative z-10 flex items-center justify-center gap-1.5 font-bold text-sm transition-colors duration-300 ${currentStatus === "استراحة" ? "text-white" : "text-slate-500"}`}
-          data-testid="status-break"><PauseCircle className="w-4 h-4" /> استراحة</button>
+          data-testid="status-break"><PauseCircle className="w-4 h-4" /> {t("driver.status.break")}</button>
         <button onClick={() => change("مغلق")}
           className={`flex-1 relative z-10 flex items-center justify-center gap-1.5 font-bold text-sm transition-colors duration-300 ${currentStatus === "مغلق" ? "text-white" : "text-slate-500"}`}
-          data-testid="status-closed"><XCircle className="w-4 h-4" /> مغلق</button>
+          data-testid="status-closed"><XCircle className="w-4 h-4" /> {t("driver.status.closed")}</button>
       </div>
       {updateStatusMutation.isPending && (
         <div className="text-center mt-2"><Loader2 className="w-4 h-4 animate-spin text-primary inline-block" /></div>

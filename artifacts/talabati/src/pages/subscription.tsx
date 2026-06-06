@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/layout";
+import { useTranslation } from "@/lib/i18n";
 import {
   useGetDriverSubscription,
   getGetDriverSubscriptionQueryKey,
@@ -37,6 +38,7 @@ export default function SubscriptionPage() {
 }
 
 function SubscriptionContent({ driverId }: { driverId: string }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
 
@@ -111,8 +113,8 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
           <ArrowRight className="w-5 h-5 text-slate-600 dark:text-slate-300" />
         </button>
         <div>
-          <h1 className="text-xl font-black text-slate-800 dark:text-white">صفحة الاشتراك الشهري</h1>
-          <p className="text-sm text-slate-500">اشتراك السائق الشهري — 500 دج</p>
+          <h1 className="text-xl font-black text-slate-800 dark:text-white">{t("subscription.title")}</h1>
+          <p className="text-sm text-slate-500">{t("subscription.subtitle")}</p>
         </div>
       </div>
 
@@ -284,7 +286,7 @@ function UploadReceiptForm({
           <Upload className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <h2 className="font-bold text-slate-800 dark:text-white">رفع صورة الوصل</h2>
+          <h2 className="font-bold text-slate-800 dark:text-white">{t("subscription.upload")}</h2>
           <p className="text-xs text-slate-500">ارفع صورة واضحة لوصل الدفع</p>
         </div>
       </div>
@@ -363,12 +365,12 @@ function UploadReceiptForm({
         {isSubmitting ? (
           <>
             <Loader2 className="w-5 h-5 animate-spin" />
-            جارٍ إرسال الوصل...
+            {t("subscription.pending")}...
           </>
         ) : (
           <>
             <CreditCard className="w-5 h-5" />
-            إرسال الوصل للمراجعة
+            {t("subscription.submit")}
           </>
         )}
       </button>

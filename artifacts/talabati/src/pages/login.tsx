@@ -5,7 +5,6 @@ import { useLogin } from "@workspace/api-client-react";
 import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { Link } from "wouter";
 import { WaterDrops, WaterTruckIcon, AuthControls } from "@/components/layout";
-import { supabase } from "@/lib/supabase";
 import { useTranslation } from "@/lib/i18n";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { REGEXP_ONLY_DIGITS } from "input-otp";
@@ -27,6 +26,7 @@ export default function Login() {
   const [forgotStep, setForgotStep] = useState<ForgotStep>("email");
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotOtp, setForgotOtp] = useState("");
+  const [forgotResetToken, setForgotResetToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -66,7 +66,7 @@ export default function Login() {
     });
   };
 
-  // ── Forgot: Step 1 — send OTP ──────────────────────────────────────────────
+  // ── Forgot: Step 1 — send OTP via backend ─────────────────────────────────
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setForgotError("");
@@ -76,20 +76,22 @@ export default function Login() {
     }
     setForgotLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: forgotEmail.trim(),
-        options: { shouldCreateUser: false },
+      const res = await fetch("/api/auth/send-reset-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
       });
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || t("common.error"));
       setForgotStep("otp");
     } catch (err: any) {
-      setForgotError(err?.message || t("common.error"));
+      setForgotError(err.message || t("common.error"));
     } finally {
       setForgotLoading(false);
     }
   };
 
-  // ── Forgot: Step 2 — verify OTP ───────────────────────────────────────────
+  // ── Forgot: Step 2 — verify OTP via backend, get server-issued resetToken ──
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setForgotError("");
@@ -99,21 +101,23 @@ export default function Login() {
     }
     setForgotLoading(true);
     try {
-      const { error } = await supabase.auth.verifyOtp({
-        email: forgotEmail.trim(),
-        token: forgotOtp.trim(),
-        type: "email",
+      const res = await fetch("/api/auth/verify-reset-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim(), otp: forgotOtp.trim() }),
       });
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || t("forgot.otp.error"));
+      setForgotResetToken(data.resetToken);
       setForgotStep("reset");
     } catch (err: any) {
-      setForgotError(t("forgot.otp.error"));
+      setForgotError(err.message || t("forgot.otp.error"));
     } finally {
       setForgotLoading(false);
     }
   };
 
-  // ── Forgot: Step 3 — reset password ───────────────────────────────────────
+  // ── Forgot: Step 3 — exchange resetToken + newPassword ────────────────────
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setForgotError("");
@@ -130,7 +134,7 @@ export default function Login() {
       const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: forgotEmail.trim(), newPassword }),
+        body: JSON.stringify({ resetToken: forgotResetToken, newPassword }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t("common.error"));
@@ -147,6 +151,7 @@ export default function Login() {
     setForgotStep("email");
     setForgotEmail("");
     setForgotOtp("");
+    setForgotResetToken("");
     setNewPassword("");
     setConfirmPassword("");
     setForgotError("");

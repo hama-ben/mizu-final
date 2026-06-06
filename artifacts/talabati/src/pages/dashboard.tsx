@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/layout";
+import { useTranslation } from "@/lib/i18n";
 import { useCreateOrder, useGetUserOrders, getGetUserOrdersQueryKey } from "@workspace/api-client-react";
 import { useCancelOrder } from "@/hooks/use-cancel-order";
 import { useQueryClient } from "@tanstack/react-query";
@@ -43,6 +44,7 @@ interface DriverAcceptedInfo {
 
 export default function Dashboard() {
   const { userId, userType } = useAuth();
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [view, setView] = useState<View>("menu");
@@ -95,9 +97,9 @@ export default function Dashboard() {
             <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-5 animate-bounce">
               <Truck className="w-10 h-10 text-amber-500" />
             </div>
-            <h2 className="text-2xl font-black text-slate-800 dark:text-white mb-3">شاحنة الماء وصلت!</h2>
+            <h2 className="text-2xl font-black text-slate-800 dark:text-white mb-3">{t("dashboard.order.arrived")}</h2>
             <p className="text-slate-600 dark:text-slate-300 leading-relaxed mb-6">
-              السائق متواجد الآن أمام منزلك، يرجى الخروج لاستلام الطلب.
+              {t("dashboard.order.arrivedDesc")}
             </p>
             <button onClick={handleAcknowledge}
               className="w-full bg-gradient-to-r from-amber-400 to-orange-500 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-amber-400/30 hover:opacity-90 transition-all active:scale-[0.98]"
@@ -114,7 +116,7 @@ export default function Dashboard() {
             <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
               <Truck className="w-10 h-10 text-emerald-500" />
             </div>
-            <h2 className="text-xl font-black text-slate-800 dark:text-white mb-2">تم قبول طلبك!</h2>
+            <h2 className="text-xl font-black text-slate-800 dark:text-white mb-2">{t("dashboard.order.accepted")}</h2>
             <p className="text-slate-500 text-sm mb-4">السائق التالي في طريقه إليك</p>
             <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-2xl p-4 space-y-3 text-right mb-6">
               {driverAcceptedInfo.driverName && (
@@ -182,7 +184,7 @@ export default function Dashboard() {
 
       {supportOpen && (
         <div className="fixed bottom-24 left-6 w-80 glass-panel rounded-3xl shadow-2xl z-50 overflow-hidden flex flex-col" style={{ maxHeight: "420px" }}>
-          <div className="bg-gradient-to-r from-primary to-cyan-500 text-white p-4 font-bold text-center">خدمة العملاء</div>
+          <div className="bg-gradient-to-r from-primary to-cyan-500 text-white p-4 font-bold text-center">{t("dashboard.support")}</div>
           <div className="flex-1 overflow-y-auto p-4 space-y-2" style={{ minHeight: "200px", maxHeight: "280px" }}>
             {chatMessages.map((m, i) => (
               <div key={i} className={`flex ${m.from === "user" ? "justify-start" : "justify-end"}`}>
@@ -195,9 +197,9 @@ export default function Dashboard() {
           <div className="p-3 border-t border-slate-200 dark:border-slate-700 flex gap-2">
             <input value={chatInput} onChange={e => setChatInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleSendChat()}
-              placeholder="اكتب سؤالك..." className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-2 text-sm outline-none"
+              placeholder={t("dashboard.support.placeholder")} className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-2 text-sm outline-none"
               data-testid="input-chat" />
-            <button onClick={handleSendChat} className="bg-primary text-white rounded-xl px-3 py-2 text-sm font-bold" data-testid="button-chat-send">إرسال</button>
+            <button onClick={handleSendChat} className="bg-primary text-white rounded-xl px-3 py-2 text-sm font-bold" data-testid="button-chat-send">{t("dashboard.support.send")}</button>
           </div>
         </div>
       )}
@@ -383,6 +385,7 @@ function RatingModal({ orderId, raterUserId, ratedUserId, raterType, ratedName, 
 }
 
 function MenuView({ onSelect }: { onSelect: (view: View) => void }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-6 mt-8">
       <AnnouncementsBar />
@@ -390,15 +393,15 @@ function MenuView({ onSelect }: { onSelect: (view: View) => void }) {
         <div className="w-20 h-20 bg-gradient-to-tr from-sky-400 to-primary rounded-full flex items-center justify-center shadow-lg shadow-sky-400/40 group-hover:scale-110 transition-transform duration-300">
           <ShoppingBag className="w-10 h-10 text-white" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-white">طلب جديد</h2>
-        <p className="text-slate-500 text-center max-w-[200px]">اطلب مياه شرب نقية وتصلك في أسرع وقت</p>
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white">{t("dashboard.newOrder")}</h2>
+        <p className="text-slate-500 text-center max-w-[200px]">{t("dashboard.newOrderDesc")}</p>
       </button>
       <button onClick={() => onSelect("my-orders")} className="bubble-card p-8 flex flex-col items-center justify-center gap-4 group" data-testid="button-nav-my-orders">
         <div className="w-20 h-20 bg-gradient-to-tr from-teal-400 to-emerald-500 rounded-full flex items-center justify-center shadow-lg shadow-teal-400/40 group-hover:scale-110 transition-transform duration-300">
           <ListOrdered className="w-10 h-10 text-white" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-white">طلباتي</h2>
-        <p className="text-slate-500 text-center max-w-[200px]">تتبع طلباتك السابقة والحالية</p>
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white">{t("dashboard.myOrders")}</h2>
+        <p className="text-slate-500 text-center max-w-[200px]">{t("dashboard.myOrdersDesc")}</p>
       </button>
     </div>
   );
