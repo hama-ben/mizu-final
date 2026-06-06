@@ -12,7 +12,7 @@ import {
 import { Link } from "wouter";
 import { WILAYAS } from "@/data/algeria";
 import { uploadDriverFile } from "@/lib/supabase";
-import { WaterDrops } from "@/components/layout";
+import { WaterDrops, AuthControls } from "@/components/layout";
 
 type UserType = "مستهلك" | "سائق";
 type Screen   = "form" | "otp" | "upload" | "gate";
@@ -38,6 +38,7 @@ export default function Register() {
 
   return (
     <div className="min-h-[100dvh] flex flex-col p-6 relative overflow-x-hidden bg-gradient-to-b from-blue-50 to-white dark:from-slate-900 dark:to-slate-950 pb-20 pt-12">
+      <AuthControls />
       <WaterDrops />
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob pointer-events-none" />
       <div className="w-full max-w-sm mx-auto relative z-10 flex flex-col">

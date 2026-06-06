@@ -180,7 +180,7 @@ router.post("/auth/register-request", async (req, res): Promise<void> => {
       .from(usersTable)
       .where(eq(usersTable.email, email));
     if (existingEmail) {
-      res.status(400).json({ error: "البريد الإلكتروني مستخدم بالفعل" });
+      res.status(400).json({ error: "الحساب مسجل بالفعل" });
       return;
     }
 
@@ -189,7 +189,7 @@ router.post("/auth/register-request", async (req, res): Promise<void> => {
       .from(usersTable)
       .where(eq(usersTable.phone, phone));
     if (existingPhone) {
-      res.status(400).json({ error: "رقم الهاتف مستخدم بالفعل" });
+      res.status(400).json({ error: "الرقم مستخدم بالفعل" });
       return;
     }
   } catch (err) {
@@ -428,6 +428,45 @@ router.post("/auth/logout", (req, res): void => {
   const sessionToken = req.headers["x-session-token"] as string | undefined;
   if (userId && sessionToken) revokeSession(userId, sessionToken);
   res.status(204).end();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reset password (OTP-verified on frontend via Supabase)
+// Frontend verifies OTP ownership, then POSTs new password here.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/auth/reset-password", async (req, res): Promise<void> => {
+  const { email, newPassword } = req.body as { email?: string; newPassword?: string };
+
+  if (!email || !newPassword) {
+    res.status(400).json({ error: "البريد الإلكتروني وكلمة المرور الجديدة مطلوبان" });
+    return;
+  }
+
+  if (typeof newPassword !== "string" || newPassword.length < 6) {
+    res.status(400).json({ error: "كلمة المرور يجب أن تكون 6 أحرف على الأقل" });
+    return;
+  }
+
+  const passwordHash = hashPassword(newPassword);
+
+  try {
+    const result = await db
+      .update(usersTable)
+      .set({ passwordHash })
+      .where(eq(usersTable.email, email.trim()))
+      .returning({ id: usersTable.id });
+
+    if (result.length === 0) {
+      res.status(404).json({ error: "البريد الإلكتروني غير مسجل" });
+      return;
+    }
+
+    logger.info({ userId: result[0].id }, "✅ Password reset via OTP flow");
+    res.json({ message: "تم تحديث كلمة المرور بنجاح" });
+  } catch (err) {
+    const { status, message } = handleDbError(err, "reset-password update");
+    res.status(status).json({ error: message });
+  }
 });
 
 export default router;

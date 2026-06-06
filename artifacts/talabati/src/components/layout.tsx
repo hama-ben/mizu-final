@@ -1,6 +1,8 @@
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut } from "lucide-react";
+import { LogOut, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/lib/theme";
+import { useTranslation, LOCALES, LOCALE_FLAGS, type Locale } from "@/lib/i18n";
 
 export function WaterDrops() {
   return (
@@ -38,8 +40,55 @@ export function WaterTruckIcon({ className = "" }: { className?: string }) {
   );
 }
 
+function LanguageCycleButton() {
+  const { locale, setLocale } = useTranslation();
+
+  const cycleLocale = () => {
+    const idx = LOCALES.indexOf(locale);
+    const next = LOCALES[(idx + 1) % LOCALES.length] as Locale;
+    setLocale(next);
+  };
+
+  return (
+    <button
+      onClick={cycleLocale}
+      title={`Language: ${locale.toUpperCase()}`}
+      className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors text-base leading-none select-none"
+      aria-label="Switch language"
+    >
+      {LOCALE_FLAGS[locale]}
+    </button>
+  );
+}
+
+function ThemeToggleButton() {
+  const { theme, toggleTheme } = useTheme();
+  const { t } = useTranslation();
+
+  return (
+    <button
+      onClick={toggleTheme}
+      title={theme === "dark" ? t("theme.light") : t("theme.dark")}
+      className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors text-slate-600 dark:text-slate-300"
+      aria-label="Toggle theme"
+    >
+      {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+    </button>
+  );
+}
+
+export function AuthControls() {
+  return (
+    <div className="fixed top-4 left-4 z-50 flex items-center gap-2">
+      <LanguageCycleButton />
+      <ThemeToggleButton />
+    </div>
+  );
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
   const { name, logout } = useAuth();
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
 
   const handleLogout = () => {
@@ -56,23 +105,29 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
               <WaterTruckIcon className="w-7 h-5 text-primary" />
             </div>
-            <span className="font-bold text-lg text-primary tracking-tight">الشعيبة</span>
+            <span className="font-bold text-lg text-primary tracking-tight">طلباتي</span>
           </div>
 
-          {name && (
-            <div className="flex items-center gap-4">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                مرحباً، {name}
-              </span>
-              <button
-                onClick={handleLogout}
-                className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors text-slate-600 dark:text-slate-300"
-                data-testid="button-logout"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <LanguageCycleButton />
+            <ThemeToggleButton />
+
+            {name && (
+              <>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 hidden sm:block">
+                  {t("nav.greeting")}، {name}
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors text-slate-600 dark:text-slate-300"
+                  data-testid="button-logout"
+                  title={t("nav.logout")}
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
