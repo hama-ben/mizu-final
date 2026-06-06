@@ -279,6 +279,7 @@ function UploadReceiptForm({
   isSubmitting,
   error,
 }: UploadFormProps) {
+  const { t } = useTranslation();
   return (
     <div className="glass-panel rounded-3xl p-6 space-y-5">
       <div className="flex items-center gap-3">

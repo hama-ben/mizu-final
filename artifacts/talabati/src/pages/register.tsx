@@ -13,6 +13,7 @@ import { Link } from "wouter";
 import { WILAYAS } from "@/data/algeria";
 import { uploadDriverFile } from "@/lib/supabase";
 import { WaterDrops, AuthControls } from "@/components/layout";
+import { useTranslation } from "@/lib/i18n";
 
 type UserType = "مستهلك" | "سائق";
 type Screen   = "form" | "otp" | "upload" | "gate";
@@ -62,6 +63,7 @@ export default function Register() {
 const REG_DRAFT_KEY = "reg_draft";
 
 function RegistrationForm({ onOtpSent }: { onOtpSent: (email: string) => void }) {
+  const { t } = useTranslation();
   const [userType, setUserType] = useState<UserType | null>(null);
   const [name, setName]         = useState("");
   const [email, setEmail]       = useState("");
@@ -99,10 +101,10 @@ function RegistrationForm({ onOtpSent }: { onOtpSent: (email: string) => void })
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!userType)  { setError("يرجى اختيار نوع الحساب أولاً"); return; }
-    if (!name || !email || !password || !phone) { setError("يرجى ملء جميع الحقول"); return; }
-    if (!wilaya)    { setError("يرجى اختيار الولاية"); return; }
-    if (!commune)   { setError("يرجى اختيار البلدية"); return; }
+    if (!userType)  { setError(t("register.error.role")); return; }
+    if (!name || !email || !password || !phone) { setError(t("register.error.fields")); return; }
+    if (!wilaya)    { setError(t("register.error.wilaya")); return; }
+    if (!commune)   { setError(t("register.error.commune")); return; }
     requestMutation.mutate(
       { data: { name, email, password, phone, userType, wilaya, commune } },
       {
@@ -123,10 +125,10 @@ function RegistrationForm({ onOtpSent }: { onOtpSent: (email: string) => void })
     <>
       <div className="mb-8">
         <Link href="/" className="inline-flex items-center text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors mb-6" data-testid="link-back-login">
-          <ArrowRight className="w-4 h-4 ml-1" /><span>العودة للدخول</span>
+          <ArrowRight className="w-4 h-4 ml-1" /><span>{t("register.back")}</span>
         </Link>
-        <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-1">إنشاء حساب جديد</h1>
-        <p className="text-slate-500 dark:text-slate-400">انضم إلى الشعيبة اليوم</p>
+        <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-1">{t("register.title")}</h1>
+        <p className="text-slate-500 dark:text-slate-400">{t("register.subtitle")}</p>
       </div>
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-2xl mb-6 text-center animate-in fade-in slide-in-from-top-1">{error}</div>
@@ -145,16 +147,16 @@ function RegistrationForm({ onOtpSent }: { onOtpSent: (email: string) => void })
               ? <UserCircle className={`w-8 h-8 mb-2 ${userType === role ? "text-primary" : "text-slate-400"}`} />
               : <Car className={`w-8 h-8 mb-2 ${userType === role ? "text-primary" : "text-slate-400"}`} />
             }
-            <span className="font-bold">سجل ك{role}</span>
+            <span className="font-bold">{role === "مستهلك" ? t("register.role.consumer") : t("register.role.driver")}</span>
           </button>
         ))}
       </div>
       <form onSubmit={handleSubmit} className="glass-panel rounded-3xl p-6">
         <div className="space-y-4">
-          <Field icon={<User className="h-5 w-5" />}  type="text"     placeholder="الاسم الكامل"       value={name}     onChange={setName}     testId="input-name" />
-          <Field icon={<Mail className="h-5 w-5" />}  type="email"    placeholder="البريد الإلكتروني"  value={email}    onChange={setEmail}    testId="input-email" />
-          <Field icon={<Phone className="h-5 w-5" />} type="tel"      placeholder="رقم الهاتف"         value={phone}    onChange={setPhone}    testId="input-phone" />
-          <Field icon={<Lock className="h-5 w-5" />}  type="password" placeholder="كلمة المرور"        value={password} onChange={setPassword} testId="input-password" />
+          <Field icon={<User className="h-5 w-5" />}  type="text"     placeholder={t("register.name")}     value={name}     onChange={setName}     testId="input-name" />
+          <Field icon={<Mail className="h-5 w-5" />}  type="email"    placeholder={t("register.email")}    value={email}    onChange={setEmail}    testId="input-email" />
+          <Field icon={<Phone className="h-5 w-5" />} type="tel"      placeholder={t("register.phone")}    value={phone}    onChange={setPhone}    testId="input-phone" />
+          <Field icon={<Lock className="h-5 w-5" />}  type="password" placeholder={t("register.password")} value={password} onChange={setPassword} testId="input-password" />
           <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">
               <MapPin className="w-3.5 h-3.5 text-primary" /><span>موقعك الجغرافي</span>
@@ -165,7 +167,7 @@ function RegistrationForm({ onOtpSent }: { onOtpSent: (email: string) => void })
               <select value={wilaya} onChange={(e) => handleWilayaChange(e.target.value)}
                 className="w-full bg-white/50 dark:bg-black/50 border border-slate-200 dark:border-slate-800 rounded-2xl py-3 pr-10 pl-8 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all appearance-none text-right"
                 dir="rtl" data-testid="select-wilaya">
-                <option value="">اختر الولاية</option>
+                <option value="">{t("register.wilaya")}</option>
                 {WILAYAS.map((w) => (
                   <option key={w.code} value={w.name}>{w.code.toString().padStart(2, "0")} - {w.name}</option>
                 ))}
@@ -177,7 +179,7 @@ function RegistrationForm({ onOtpSent }: { onOtpSent: (email: string) => void })
               <select value={commune} onChange={(e) => setCommune(e.target.value)} disabled={!wilaya}
                 className="w-full bg-white/50 dark:bg-black/50 border border-slate-200 dark:border-slate-800 rounded-2xl py-3 pr-10 pl-8 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all appearance-none text-right disabled:opacity-40 disabled:cursor-not-allowed"
                 dir="rtl" data-testid="select-commune">
-                <option value="">{wilaya ? "اختر البلدية" : "اختر الولاية أولاً"}</option>
+                <option value="">{wilaya ? t("register.commune") : t("register.wilaya")}</option>
                 {communes.map((c) => (<option key={c} value={c}>{c}</option>))}
               </select>
             </div>
@@ -193,7 +195,7 @@ function RegistrationForm({ onOtpSent }: { onOtpSent: (email: string) => void })
             data-testid="button-submit-register">
             {requestMutation.isPending
               ? <Loader2 className="w-5 h-5 animate-spin" />
-              : <><ShieldCheck className="w-5 h-5" /><span>إرسال رمز التحقق</span></>}
+              : <><ShieldCheck className="w-5 h-5" /><span>{t("register.submit")}</span></>}
           </button>
         </div>
       </form>
