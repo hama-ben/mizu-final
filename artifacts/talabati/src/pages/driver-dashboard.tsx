@@ -21,6 +21,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useRealtimeOrders } from "@/hooks/use-realtime-orders";
 import { OrderNotification } from "@/components/order-notification";
+import { useOrderNotificationStore } from "@/stores/order-notifications";
 import {
   Package, Truck, CheckCircle2, User, Phone, MapPin,
   Loader2, PlayCircle, PauseCircle, XCircle, Bell, Coffee, Timer,
@@ -930,6 +931,12 @@ function PendingOrdersQueue({ driverId }: { driverId: string }) {
 
   // Realtime push notifications — fires only when a new order appears in this driver's commune
   const { notification, dismiss } = useRealtimeOrders(driverId, orders?.length ?? 0);
+  const resetNavBadge = useOrderNotificationStore((s) => s.reset);
+
+  // Clear the nav badge whenever the driver opens this page
+  useEffect(() => { resetNavBadge(); }, []);
+
+  const handleDismiss = () => { dismiss(); resetNavBadge(); };
 
   const handleAccept = (orderId: string) => {
     acceptMutation.mutate(
@@ -953,7 +960,7 @@ function PendingOrdersQueue({ driverId }: { driverId: string }) {
 
   return (
     <>
-      <OrderNotification show={notification} onDismiss={dismiss} />
+      <OrderNotification show={notification} onDismiss={handleDismiss} />
 
     <div className="space-y-4">
       <h2 className="font-bold text-lg text-slate-800 dark:text-white px-2 flex items-center gap-2">

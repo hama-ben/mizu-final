@@ -1,8 +1,10 @@
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Sun, Moon, UserCircle } from "lucide-react";
+import { LogOut, Sun, Moon, UserCircle, Bell } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { useTranslation, LOCALES, LOCALE_FLAGS, type Locale } from "@/lib/i18n";
+import { useDriverOrderWatcher } from "@/hooks/use-driver-order-watcher";
+import { useOrderNotificationStore } from "@/stores/order-notifications";
 
 export function WaterDrops() {
   return (
@@ -87,9 +89,21 @@ export function AuthControls() {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { name, logout } = useAuth();
+  const { name, userId, userType, logout } = useAuth();
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
+
+  // Global order watcher — only active for signed-in drivers
+  const isDriver = userType === "سائق" && !!userId;
+  useDriverOrderWatcher(isDriver);
+
+  const notifCount = useOrderNotificationStore((s) => s.count);
+  const resetNotif = useOrderNotificationStore((s) => s.reset);
+
+  const handleBellClick = () => {
+    resetNotif();
+    setLocation("/driver-dashboard");
+  };
 
   const handleLogout = () => {
     logout();
@@ -117,6 +131,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-200 hidden sm:block">
                   {t("nav.greeting")}، {name}
                 </span>
+
+                {/* Order notification bell — drivers only */}
+                {isDriver && (
+                  <button
+                    onClick={handleBellClick}
+                    className="relative w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors text-slate-600 dark:text-slate-300"
+                    title="إشعارات الطلبات"
+                    aria-label="إشعارات الطلبات"
+                  >
+                    <Bell className={`w-4 h-4 ${notifCount > 0 ? "text-primary animate-bounce" : ""}`} />
+                    {notifCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center leading-none shadow-md">
+                        {notifCount > 99 ? "99+" : notifCount}
+                      </span>
+                    )}
+                  </button>
+                )}
+
                 <button
                   onClick={() => setLocation("/profile")}
                   className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors text-slate-600 dark:text-slate-300"
