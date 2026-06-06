@@ -106,6 +106,7 @@ function ExpiredSubscriptionOverlay() {
 // ─────────────────────────────────────────────────────────────────────────────
 function DriverDashboardContent({ driverId }: { driverId: string }) {
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const { data: statuses } = useGetDriverStatus({
     query: { queryKey: getGetDriverStatusQueryKey(), refetchInterval: 15000 }
@@ -114,6 +115,12 @@ function DriverDashboardContent({ driverId }: { driverId: string }) {
   const { data: account } = useGetDriverAccount(driverId, {
     query: { queryKey: getGetDriverAccountQueryKey(driverId), refetchInterval: 10000 }
   });
+
+  useEffect(() => {
+    if (account !== undefined && account.subscriptionExpiresAt === null) {
+      setLocation("/subscription");
+    }
+  }, [account, setLocation]);
 
   const myStatusObj = statuses?.find(s => s.driverId === driverId);
   const currentStatus = (myStatusObj?.currentStatus || "مغلق") as DriverStatusInputCurrentStatus;
@@ -694,8 +701,10 @@ function SatelliteMap({
   const mapRef         = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<unknown>(null);
   const driverMarkerRef = useRef<unknown>(null);
+  const polylineRef    = useRef<unknown>(null);
   const watchIdRef     = useRef<number | null>(null);
   const lastSupabaseUpdate = useRef<number>(0);
+  const [driverPos, setDriverPos] = useState<[number, number] | null>(null);
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -727,6 +736,10 @@ function SatelliteMap({
         };
         divIcon: (opts: object) => object;
         latLngBounds: (corners: [[number, number], [number, number]]) => unknown;
+        polyline: (latlngs: [number, number][], opts?: object) => {
+          addTo: (m: unknown) => unknown;
+          setLatLngs: (latlngs: [number, number][]) => void;
+        };
       };
 
       const L = win["L"] as LeafletType;
@@ -796,20 +809,33 @@ function SatelliteMap({
           const { latitude, longitude } = pos.coords;
           const latLng: [number, number] = [latitude, longitude];
 
+          setDriverPos(latLng);
+
           if (!driverMarkerRef.current) {
-            // أول موقع — إنشاء المؤشر وضبط حدود الخريطة
+            // أول موقع — إنشاء المؤشر والخط وضبط حدود الخريطة
             driverMarkerRef.current = L.marker(latLng, { icon: driverIcon })
               .addTo(map)
               .bindPopup("🚚 موقعي الحالي");
+
+            polylineRef.current = L.polyline([latLng, [destLat, destLng]], {
+              color: "#0ea5e9",
+              weight: 4,
+              opacity: 0.85,
+              dashArray: "10, 6",
+            }).addTo(map);
 
             map.fitBounds(
               [[latitude, longitude], [destLat, destLng]],
               { padding: [50, 50] }
             );
           } else {
-            // تحديث موقع المؤشر بدون إعادة تحميل الصفحة
+            // تحديث موقع المؤشر والخط بدون إعادة تحميل الصفحة
             (driverMarkerRef.current as { setLatLng: (c: [number, number]) => void })
               .setLatLng(latLng);
+            if (polylineRef.current) {
+              (polylineRef.current as { setLatLngs: (c: [number, number][]) => void })
+                .setLatLngs([latLng, [destLat, destLng]]);
+            }
           }
 
           // إرسال الإحداثيات إلى Supabase كل 5 ثوانٍ فقط
@@ -856,16 +882,30 @@ function SatelliteMap({
         mapInstanceRef.current = null;
       }
       driverMarkerRef.current = null;
+      polylineRef.current = null;
     };
   }, [orderId, destLat, destLng, driverId]);
 
   return (
-    <div
-      ref={mapRef}
-      className="w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700"
-      style={{ height: "240px" }}
-      data-testid={`map-${orderId}`}
-    />
+    <div className="space-y-2">
+      <div
+        ref={mapRef}
+        className="w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700"
+        style={{ height: "240px" }}
+        data-testid={`map-${orderId}`}
+      />
+      {driverPos && (
+        <a
+          href={`https://www.google.com/maps/dir/?api=1&origin=${driverPos[0]},${driverPos[1]}&destination=${destLat},${destLng}&travelmode=driving`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 transition-colors shadow-sm"
+        >
+          <MapPin className="w-4 h-4" />
+          التنقل عبر خرائط Google
+        </a>
+      )}
+    </div>
   );
 }
 

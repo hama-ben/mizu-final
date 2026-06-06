@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/layout";
@@ -7,6 +7,8 @@ import {
   useGetDriverSubscription,
   getGetDriverSubscriptionQueryKey,
   useSubmitSubscriptionReceipt,
+  useGetDriverAccount,
+  getGetDriverAccountQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -41,6 +43,20 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+
+  const { data: account } = useGetDriverAccount(driverId, {
+    query: { queryKey: getGetDriverAccountQueryKey(driverId), retry: false },
+  });
+
+  const neverSubscribed = account !== undefined && account.subscriptionExpiresAt === null;
+
+  useEffect(() => {
+    if (!neverSubscribed) return;
+    window.history.pushState(null, "", window.location.href);
+    const handlePop = () => window.history.pushState(null, "", window.location.href);
+    window.addEventListener("popstate", handlePop);
+    return () => window.removeEventListener("popstate", handlePop);
+  }, [neverSubscribed]);
 
   const { data: payment, isLoading } = useGetDriverSubscription(driverId, {
     query: {
@@ -106,12 +122,14 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
 
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button
-          onClick={() => setLocation("/driver-dashboard")}
-          className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-        >
-          <ArrowRight className="w-5 h-5 text-slate-600 dark:text-slate-300" />
-        </button>
+        {!neverSubscribed && (
+          <button
+            onClick={() => setLocation("/driver-dashboard")}
+            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+          >
+            <ArrowRight className="w-5 h-5 text-slate-600 dark:text-slate-300" />
+          </button>
+        )}
         <div>
           <h1 className="text-xl font-black text-slate-800 dark:text-white">{t("subscription.title")}</h1>
           <p className="text-sm text-slate-500">{t("subscription.subtitle")}</p>
@@ -170,12 +188,18 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
 
       {/* Upload form — hide if payment pending review */}
       {payment?.status === "pending" ? (
-        <div className="glass-panel rounded-3xl p-6 text-center border border-amber-200 dark:border-amber-700">
-          <Clock className="w-10 h-10 text-amber-500 mx-auto mb-3" />
-          <h3 className="font-bold text-slate-800 dark:text-white mb-1">وصلك قيد المراجعة</h3>
+        <div className="glass-panel rounded-3xl p-6 text-center border border-amber-200 dark:border-amber-700 space-y-3">
+          <Clock className="w-10 h-10 text-amber-500 mx-auto" />
+          <h3 className="font-bold text-slate-800 dark:text-white">في انتظار تأكيد اشتراكك</h3>
           <p className="text-sm text-slate-500 leading-relaxed">
             تم استلام وصلك وهو الآن تحت مراجعة الإدارة. سيتم تفعيل اشتراكك فور القبول.
           </p>
+          <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-2xl p-3 flex items-start gap-2 text-right">
+            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+            <p className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">
+              مكافأة: تم منحك <strong>3 أيام مجانية</strong> فور رفع الوصل. يمكنك استقبال الطلبات الآن بينما يُراجع الإداريون وصلك.
+            </p>
+          </div>
         </div>
       ) : (
         <UploadReceiptForm

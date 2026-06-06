@@ -384,7 +384,14 @@ router.post("/driver/:driverId/subscription", async (req, res): Promise<void> =>
     .values({ driverId, receiptImage, status: "pending" })
     .returning();
 
-  req.log.info({ driverId, paymentId: payment.id }, "Subscription receipt submitted");
+  // Grant 3 free days immediately as a bonus upon receipt upload
+  const bonusExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+  await db
+    .update(usersTable)
+    .set({ subscriptionExpiresAt: bonusExpiresAt })
+    .where(eq(usersTable.id, driverId));
+
+  req.log.info({ driverId, paymentId: payment.id, bonusExpiresAt }, "Subscription receipt submitted — 3-day bonus granted");
 
   res.status(201).json({
     id: payment.id,

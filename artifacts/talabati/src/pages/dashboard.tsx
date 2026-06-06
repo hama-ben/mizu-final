@@ -15,7 +15,14 @@ import { format } from "date-fns";
 
 type View = "menu" | "new-order" | "my-orders";
 
-const VOLUMES = ["5ل", "10ل", "15ل", "20ل", "50ل", "100ل", "150ل", "200ل", "500ل", "1000ل"];
+const VOLUMES = ["5ل", "10ل", "15ل", "20ل", "30ل", "40ل", "50ل", "100ل", "150ل", "200ل", "300ل", "500ل", "1000ل"];
+
+const PRICE_MAP: Record<string, number> = {
+  "5ل": 20, "10ل": 30, "15ل": 40, "20ل": 60,
+  "30ل": 70, "40ل": 100, "50ل": 120, "100ل": 250,
+  "150ل": 300, "200ل": 400, "300ل": 600, "500ل": 1000,
+  "1000ل": 1600,
+};
 
 function createSingleBeep() {
   try {
@@ -428,11 +435,7 @@ function NewOrderView({ onBack, onSuccess, userId, queryClient }: {
 
   const calculatePrice = () => {
     if (selectedVolumes.length === 0) return 0;
-    const totalLiters = selectedVolumes.reduce((acc, vol) => {
-      const num = parseInt(vol.replace("ل", ""), 10);
-      return acc + (isNaN(num) ? 0 : num);
-    }, 0);
-    return totalLiters * 5;
+    return selectedVolumes.reduce((acc, vol) => acc + (PRICE_MAP[vol] ?? 0), 0);
   };
 
   const totalPrice = calculatePrice();

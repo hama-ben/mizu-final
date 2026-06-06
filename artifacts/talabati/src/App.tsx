@@ -8,6 +8,7 @@ import Register from "@/pages/register";
 import Dashboard from "@/pages/dashboard";
 import DriverDashboard from "@/pages/driver-dashboard";
 import SubscriptionPage from "@/pages/subscription";
+import ProfilePage from "@/pages/profile";
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
@@ -62,6 +63,7 @@ function Router() {
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/driver-dashboard" component={DriverDashboard} />
       <Route path="/subscription" component={SubscriptionPage} />
+      <Route path="/profile" component={ProfilePage} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -23,6 +23,11 @@ export function createSession(userId: string): string {
   return token;
 }
 
+export function isAtSessionLimit(userId: string): boolean {
+  const sessions = sessionStore.get(userId);
+  return sessions != null && sessions.length >= MAX_SESSIONS;
+}
+
 export function validateSession(userId: string, token: string): boolean {
   const sessions = sessionStore.get(userId);
   return sessions != null && sessions.includes(token);
@@ -407,6 +412,11 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
+  if (isAtSessionLimit(user.id)) {
+    res.status(403).json({ error: "عذراً، لقد تجاوزت الحد المسموح به للأجهزة. يُسمح بجهازَين فقط في نفس الوقت." });
+    return;
+  }
+
   const sessionToken = createSession(user.id);
   req.log.info({ userId: user.id }, "User logged in");
   res.json({
@@ -428,6 +438,65 @@ router.post("/auth/logout", (req, res): void => {
   const sessionToken = req.headers["x-session-token"] as string | undefined;
   if (userId && sessionToken) revokeSession(userId, sessionToken);
   res.status(204).end();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Change password (for logged-in users) — requires valid session headers
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/auth/change-password", async (req, res): Promise<void> => {
+  const userId      = req.headers["x-user-id"] as string | undefined;
+  const sessionToken = req.headers["x-session-token"] as string | undefined;
+
+  if (!userId || !sessionToken || !validateSession(userId, sessionToken)) {
+    res.status(401).json({ error: "يجب تسجيل الدخول أولاً" });
+    return;
+  }
+
+  const { oldPassword, newPassword } = req.body as { oldPassword?: string; newPassword?: string };
+
+  if (!oldPassword || !newPassword) {
+    res.status(400).json({ error: "كلمة المرور القديمة والجديدة مطلوبتان" });
+    return;
+  }
+
+  if (typeof newPassword !== "string" || newPassword.length < 6) {
+    res.status(400).json({ error: "كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل" });
+    return;
+  }
+
+  let user: typeof usersTable.$inferSelect | undefined;
+  try {
+    const [found] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+    user = found;
+  } catch (err) {
+    const { status, message } = handleDbError(err, "change-password select");
+    res.status(status).json({ error: message });
+    return;
+  }
+
+  if (!user) {
+    res.status(404).json({ error: "الحساب غير موجود" });
+    return;
+  }
+
+  if (user.passwordHash !== hashPassword(oldPassword)) {
+    res.status(401).json({ error: "كلمة المرور القديمة غير صحيحة" });
+    return;
+  }
+
+  try {
+    await db
+      .update(usersTable)
+      .set({ passwordHash: hashPassword(newPassword) })
+      .where(eq(usersTable.id, userId));
+  } catch (err) {
+    const { status, message } = handleDbError(err, "change-password update");
+    res.status(status).json({ error: message });
+    return;
+  }
+
+  req.log.info({ userId }, "✅ Password changed by logged-in user");
+  res.json({ message: "تم تغيير كلمة المرور بنجاح" });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

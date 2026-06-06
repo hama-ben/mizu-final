@@ -1,6 +1,6 @@
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Sun, Moon } from "lucide-react";
+import { LogOut, Sun, Moon, UserCircle } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { useTranslation, LOCALES, LOCALE_FLAGS, type Locale } from "@/lib/i18n";
 
@@ -117,6 +117,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-200 hidden sm:block">
                   {t("nav.greeting")}، {name}
                 </span>
+                <button
+                  onClick={() => setLocation("/profile")}
+                  className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors text-slate-600 dark:text-slate-300"
+                  title="الملف الشخصي"
+                  data-testid="button-profile"
+                >
+                  <UserCircle className="w-4 h-4" />
+                </button>
                 <button
                   onClick={handleLogout}
                   className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors text-slate-600 dark:text-slate-300"
