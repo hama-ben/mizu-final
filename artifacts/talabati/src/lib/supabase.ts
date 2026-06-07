@@ -1,20 +1,23 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? "";
+const supabaseKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? "";
 
 if (!supabaseUrl || !supabaseKey) {
-  throw new Error(
-    "VITE_SUPABASE_URL أو VITE_SUPABASE_ANON_KEY غير مضبوطَين في إعدادات Vite"
+  // Non-fatal warning — Realtime notifications will be unavailable until
+  // VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are added to secrets.
+  // All other app features (login, orders, subscriptions) continue working.
+  console.warn(
+    "[Supabase] VITE_SUPABASE_URL أو VITE_SUPABASE_ANON_KEY غير مضبوطَين — " +
+    "ميزات الإشعارات الفورية معطّلة. الرجاء إضافة المفاتيح في إعدادات Secrets."
   );
 }
 
-// FIX 3: Storage operations use a dedicated client with auth.persistSession = false
-// and no lingering session tokens. Since RLS is fully disabled on the storage bucket,
-// uploads succeed with only the anon key — no Authorization overrides needed.
-export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+export const supabase = createClient(
+  supabaseUrl  || "https://placeholder.supabase.co",
+  supabaseKey  || "placeholder-anon-key",
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 export const DRIVER_DOCS_BUCKET = "driver-verification";
 
