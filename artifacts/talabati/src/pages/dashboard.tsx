@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/layout";
 import { useTranslation } from "@/lib/i18n";
-import { useCreateOrder, useGetUserOrders, getGetUserOrdersQueryKey } from "@workspace/api-client-react";
+import { useCreateOrder, useGetUserOrders, getGetUserOrdersQueryKey, customFetch } from "@workspace/api-client-react";
 import { useCancelOrder } from "@/hooks/use-cancel-order";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -228,9 +228,8 @@ function AnnouncementsBar() {
   const [items, setItems] = useState<{ id: string; title: string; content: string; badgeText: string | null }[]>([]);
 
   useEffect(() => {
-    fetch("/api/announcements?target=consumer")
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setItems(data); })
+    customFetch<{ id: string; title: string; content: string; badgeText: string | null }[]>("/api/announcements?target=consumer")
+      .then((data: { id: string; title: string; content: string; badgeText: string | null }[]) => { setItems(data); })
       .catch(() => {});
   }, []);
 
@@ -282,16 +281,14 @@ function RatingModal({ orderId, raterUserId, ratedUserId, raterType, ratedName, 
     if (stars === 0) { setError("يرجى اختيار عدد النجوم"); return; }
     setLoading(true); setError("");
     try {
-      const res = await fetch(`/api/orders/${orderId}/rate`, {
+      const data = await customFetch<{ id: string }>(`/api/orders/${orderId}/rate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ raterUserId, ratedUserId, raterType, stars }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError((data as { error?: string }).error || "حدث خطأ"); return; }
       setRatingId(data.id);
       if (showDispute && disputeReason.trim()) {
-        await fetch(`/api/ratings/${data.id}/dispute`, {
+        await customFetch(`/api/ratings/${data.id}/dispute`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ disputeReason: disputeReason.trim() }),
@@ -299,8 +296,8 @@ function RatingModal({ orderId, raterUserId, ratedUserId, raterType, ratedName, 
       }
       setStep("done");
       setTimeout(() => { onSubmitted(); }, 1500);
-    } catch {
-      setError("تعذّر الإرسال، يرجى المحاولة مرة أخرى");
+    } catch (err: any) {
+      setError(err?.data?.error || "تعذّر الإرسال، يرجى المحاولة مرة أخرى");
     } finally {
       setLoading(false);
     }
@@ -310,15 +307,15 @@ function RatingModal({ orderId, raterUserId, ratedUserId, raterType, ratedName, 
     if (!ratingId || !disputeReason.trim()) { setError("يرجى كتابة سبب الاعتراض"); return; }
     setLoading(true); setError("");
     try {
-      await fetch(`/api/ratings/${ratingId}/dispute`, {
+      await customFetch(`/api/ratings/${ratingId}/dispute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ disputeReason: disputeReason.trim() }),
       });
       setStep("done");
       setTimeout(() => { onSubmitted(); }, 1200);
-    } catch {
-      setError("تعذّر إرسال الاعتراض");
+    } catch (err: any) {
+      setError(err?.data?.error || "تعذّر إرسال الاعتراض");
     } finally {
       setLoading(false);
     }
@@ -458,8 +455,8 @@ function NewOrderView({ onBack, onSuccess, userId, queryClient }: {
       {
         onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetUserOrdersQueryKey(userId) }); onSuccess(); },
         onError: (err: unknown) => {
-          const e = err as { response?: { data?: { error?: string } } };
-          setError(e?.response?.data?.error || "حدث خطأ في تقديم الطلب");
+          const e = err as { data?: { error?: string } };
+          setError(e?.data?.error || "حدث خطأ في تقديم الطلب");
         },
       }
     );

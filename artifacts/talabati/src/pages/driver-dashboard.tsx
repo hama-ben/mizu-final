@@ -17,6 +17,7 @@ import {
   getGetDriverOrdersQueryKey,
   useGetDriverAccount,
   getGetDriverAccountQueryKey,
+  customFetch,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRealtimeOrders } from "@/hooks/use-realtime-orders";
@@ -176,9 +177,8 @@ function AnnouncementsCard() {
   const [items, setItems] = useState<{ id: string; title: string; content: string; badgeText: string | null }[]>([]);
 
   useEffect(() => {
-    fetch("/api/announcements?target=driver")
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setItems(data); })
+    customFetch<{ id: string; title: string; content: string; badgeText: string | null }[]>("/api/announcements?target=driver")
+      .then((data: { id: string; title: string; content: string; badgeText: string | null }[]) => { setItems(data); })
       .catch(() => {});
   }, []);
 
@@ -230,15 +230,13 @@ function DriverRatingModal({ orderId, driverId, consumerUserId, consumerName, on
     if (stars === 0) { setError("يرجى اختيار عدد النجوم"); return; }
     setLoading(true); setError("");
     try {
-      const res = await fetch(`/api/orders/${orderId}/rate`, {
+      const data = await customFetch<{ id: string }>(`/api/orders/${orderId}/rate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ raterUserId: driverId, ratedUserId: consumerUserId, raterType: "driver", stars }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError((data as { error?: string }).error || "حدث خطأ"); return; }
       if (showDispute && disputeReason.trim()) {
-        await fetch(`/api/ratings/${data.id}/dispute`, {
+        await customFetch(`/api/ratings/${data.id}/dispute`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ disputeReason: disputeReason.trim() }),
@@ -246,8 +244,8 @@ function DriverRatingModal({ orderId, driverId, consumerUserId, consumerName, on
       }
       setStep("done");
       setTimeout(() => { onSubmitted(); }, 1400);
-    } catch {
-      setError("تعذّر إرسال التقييم");
+    } catch (err: any) {
+      setError(err?.data?.error || "تعذّر إرسال التقييم");
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { customFetch } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import {
   ArrowRight, UserCircle, Mail, Phone, Shield,
@@ -59,28 +60,17 @@ function ProfileContent() {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/change-password", {
+      await customFetch("/api/auth/change-password", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-id": userId ?? "",
-          "x-session-token": sessionToken ?? "",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ oldPassword, newPassword }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error ?? "حدث خطأ غير متوقع");
-      } else {
-        setSuccess("تم تغيير كلمة المرور بنجاح ✔");
-        setOldPassword("");
-        setNewPassword("");
-        setConfirmPassword("");
-      }
-    } catch {
-      setError("تعذّر الاتصال بالخادم. يرجى التحقق من الاتصال بالإنترنت.");
+      setSuccess("تم تغيير كلمة المرور بنجاح ✔");
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      setError(err?.data?.error ?? "تعذّر الاتصال بالخادم. يرجى التحقق من الاتصال بالإنترنت.");
     } finally {
       setLoading(false);
     }

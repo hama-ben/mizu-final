@@ -41,13 +41,13 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: (failureCount, error: any) => {
-        if (error?.response?.data?.code === "SESSION_EVICTED") return false;
+        if (error?.data?.code === "SESSION_EVICTED") return false;
         return failureCount < 2;
       },
     },
     mutations: {
       onError: (error: any) => {
-        if (error?.response?.data?.code === "SESSION_EVICTED") {
+        if (error?.data?.code === "SESSION_EVICTED") {
           window.dispatchEvent(new CustomEvent("api-error", { detail: { code: "SESSION_EVICTED" } }));
         }
       },

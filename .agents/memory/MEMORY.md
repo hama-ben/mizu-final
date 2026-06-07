@@ -1,2 +1,4 @@
 - [Al-Shaibia stack quirks](al-shaibia-stack.md) — lib/api-zod and lib/api-client-react have a stale src/generated vs src/src/generated split; always copy from src/src/generated into src/generated when regenerating.
 - [Session limit architecture](session-limit.md) — 2-device session limit via in-memory sessionStore in auth.ts; X-Session-Token + X-User-Id headers sent on every API call via custom-fetch getters registered in use-auth.ts.
+- [Vite dev proxy](vite-dev-proxy.md) — Vite (port 5000) must proxy /api to http://localhost:8080 or all API calls fail in dev; configured in vite.config.ts server.proxy.
+- [customFetch error shape](customfetch-error-shape.md) — ApiError from @workspace/api-client-react exposes err.data.error / err.data.code (NOT err.response.data.*); always use err?.data?.error in catch blocks.

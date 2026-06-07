@@ -9,6 +9,7 @@ import {
   useSubmitSubscriptionReceipt,
   useGetDriverAccount,
   getGetDriverAccountQueryKey,
+  customFetch,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -78,16 +79,11 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
     setFreeTrialLoading(true);
     setFreeTrialError(null);
     try {
-      const res = await fetch(`/api/driver/${driverId}/free-trial`, { method: "POST" });
-      if (res.ok) {
-        await queryClient.invalidateQueries({ queryKey: getGetDriverAccountQueryKey(driverId) });
-        setLocation("/driver-dashboard");
-        return;
-      }
-      const body = await res.json().catch(() => ({}));
-      setFreeTrialError((body as { error?: string }).error ?? "حدث خطأ. حاول مجدداً.");
-    } catch {
-      setFreeTrialError("حدث خطأ في الاتصال. حاول مجدداً.");
+      await customFetch(`/api/driver/${driverId}/free-trial`, { method: "POST" });
+      await queryClient.invalidateQueries({ queryKey: getGetDriverAccountQueryKey(driverId) });
+      setLocation("/driver-dashboard");
+    } catch (err: any) {
+      setFreeTrialError(err?.data?.error ?? "حدث خطأ. حاول مجدداً.");
     } finally {
       setFreeTrialLoading(false);
     }

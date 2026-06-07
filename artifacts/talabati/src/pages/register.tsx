@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useRegisterRequest, useVerifyOtp, useSubmitDriverDocs } from "@workspace/api-client-react";
+import { useRegisterRequest, useVerifyOtp, useSubmitDriverDocs, customFetch } from "@workspace/api-client-react";
 import {
   User, Mail, Lock, Phone, Loader2, ArrowRight,
   Car, UserCircle, ShieldCheck, RefreshCw, Clock,
@@ -530,18 +530,13 @@ function SubscriptionGate({ session }: { session: VerifiedSession }) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/driver/${session.userId}/free-trial`, {
+      await customFetch(`/api/driver/${session.userId}/free-trial`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError((data as { error?: string }).error || "حدث خطأ");
-        return;
-      }
       setLocation("/driver-dashboard");
-    } catch {
-      setError("تعذّر الاتصال بالخادم، يرجى المحاولة مرة أخرى");
+    } catch (err: any) {
+      setError(err?.data?.error || "تعذّر الاتصال بالخادم، يرجى المحاولة مرة أخرى");
     } finally {
       setLoading(false);
     }
