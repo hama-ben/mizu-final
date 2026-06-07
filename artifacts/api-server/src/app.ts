@@ -26,21 +26,40 @@ app.use(
     },
   }),
 );
-// Known production frontend origins — kept here as a hard-coded baseline so
-// the server is never accidentally open to all origins even if CORS_ORIGIN is
-// missing from the environment.  The CORS_ORIGIN env var (comma-separated) can
-// extend or override this list at runtime (useful for custom domains / staging).
-const KNOWN_ORIGINS = [
-  "https://mellow-naiad-f2a5d9.netlify.app",
-];
+// CORS origin resolver.
+//
+// Allowed in production:
+//   1. Any *.netlify.app subdomain  — covers every deploy preview automatically
+//   2. Any origin listed in CORS_ORIGIN (comma-separated env var) — use this
+//      for custom domains (e.g. talabati.dz) or your specific Netlify site URL
+//
+// In development every origin is allowed so Replit's proxy and local dev
+// servers work without config.
+const extraOrigins: string[] = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
+  : [];
 
-const corsOrigins: string[] | true = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
-  : process.env.NODE_ENV === "production"
-    ? KNOWN_ORIGINS
-    : true; // development: allow all (Replit proxy, local dev servers)
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return true; // server-to-server / curl
+  if (process.env.NODE_ENV !== "production") return true;
+  if (/^https:\/\/[a-z0-9-]+\.netlify\.app$/.test(origin)) return true;
+  if (extraOrigins.includes(origin)) return true;
+  return false;
+}
 
-app.use(cors({ origin: corsOrigins, credentials: true }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+      } else {
+        logger.warn({ origin }, "CORS blocked origin");
+        callback(new Error(`Origin not allowed: ${origin}`));
+      }
+    },
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
