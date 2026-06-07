@@ -114,8 +114,8 @@ function RegistrationForm({ onOtpSent }: { onOtpSent: (email: string) => void })
         },
         onError: (err: unknown) => {
           console.error("[REGISTER REQUEST ERROR]", err);
-          const e = err as { response?: { data?: { error?: string } } };
-          setError(e?.response?.data?.error || "حدث خطأ أثناء التسجيل");
+          const e = err as { data?: { error?: string }; message?: string };
+          setError(e?.data?.error || e?.message || "حدث خطأ أثناء التسجيل");
         },
       }
     );
@@ -274,8 +274,8 @@ function OtpVerification({ email, onBack, onVerified }: {
       },
       onError: (err: unknown) => {
         console.error("[OTP VERIFY ERROR]", err);
-        const e = err as { response?: { data?: { error?: string } } };
-        setError(e?.response?.data?.error || "رمز التحقق غير صحيح");
+        const e = err as { data?: { error?: string }; message?: string };
+        setError(e?.data?.error || e?.message || "رمز التحقق غير صحيح");
         setDigits(Array(6).fill(""));
         inputRefs.current[0]?.focus();
       },
@@ -403,8 +403,8 @@ function DriverDocsUpload({ session, onComplete }: { session: VerifiedSession; o
       });
       onComplete();
     } catch (err) {
-      const e = err as { response?: { data?: { error?: string } } };
-      setGlobalError(e?.response?.data?.error || "حدث خطأ أثناء حفظ الوثائق");
+      const e = err as { data?: { error?: string }; message?: string };
+      setGlobalError(e?.data?.error || e?.message || "حدث خطأ أثناء حفظ الوثائق");
     } finally {
       setSubmitting(false);
     }

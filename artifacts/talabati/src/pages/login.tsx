@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useLogin } from "@workspace/api-client-react";
+import { useLogin, customFetch } from "@workspace/api-client-react";
 import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { Link } from "wouter";
 import { WaterDrops, WaterTruckIcon, AuthControls } from "@/components/layout";
@@ -61,7 +61,7 @@ export default function Login() {
         setLocation(data.userType === "سائق" ? "/driver-dashboard" : "/dashboard");
       },
       onError: (err: any) => {
-        setError(err?.response?.data?.error || t("login.error.credentials"));
+        setError(err?.data?.error || err?.message || t("login.error.credentials"));
       },
     });
   };
@@ -76,16 +76,14 @@ export default function Login() {
     }
     setForgotLoading(true);
     try {
-      const res = await fetch("/api/auth/send-reset-otp", {
+      await customFetch("/api/auth/send-reset-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: forgotEmail.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("common.error"));
       setForgotStep("otp");
     } catch (err: any) {
-      setForgotError(err.message || t("common.error"));
+      setForgotError(err?.data?.error || err?.message || t("common.error"));
     } finally {
       setForgotLoading(false);
     }
@@ -101,17 +99,15 @@ export default function Login() {
     }
     setForgotLoading(true);
     try {
-      const res = await fetch("/api/auth/verify-reset-otp", {
+      const data = await customFetch<{ resetToken: string }>("/api/auth/verify-reset-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: forgotEmail.trim(), otp: forgotOtp.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("forgot.otp.error"));
       setForgotResetToken(data.resetToken);
       setForgotStep("reset");
     } catch (err: any) {
-      setForgotError(err.message || t("forgot.otp.error"));
+      setForgotError(err?.data?.error || err?.message || t("forgot.otp.error"));
     } finally {
       setForgotLoading(false);
     }
@@ -131,16 +127,14 @@ export default function Login() {
     }
     setForgotLoading(true);
     try {
-      const res = await fetch("/api/auth/reset-password", {
+      await customFetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resetToken: forgotResetToken, newPassword }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("common.error"));
       setForgotStep("done");
     } catch (err: any) {
-      setForgotError(err.message || t("common.error"));
+      setForgotError(err?.data?.error || err?.message || t("common.error"));
     } finally {
       setForgotLoading(false);
     }
