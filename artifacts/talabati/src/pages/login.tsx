@@ -350,10 +350,9 @@ export default function Login() {
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob" />
       <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-cyan-400/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000" />
       <div className="absolute bottom-[-20%] left-[20%] w-96 h-96 bg-sky-400/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-4000" />
-
       <div className="w-full max-w-sm relative z-10">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-tr from-primary to-cyan-400 rounded-3xl flex items-center justify-center shadow-lg shadow-primary/30 mb-6 rotate-3">
+          <div className="w-20 h-20 bg-gradient-to-tr from-primary to-cyan-400 rounded-3xl flex items-center justify-center shadow-lg shadow-primary/30 mb-6 rotate-3 opacity-[0.74] text-[color:var(--color-sky-800)]">
             <WaterTruckIcon className="w-12 h-8 text-white -rotate-3" />
           </div>
           <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-1">{t("login.title")}</h1>

@@ -7,6 +7,11 @@ import { authRateLimiter } from "./middlewares/auth-rate-limit";
 
 const app: Express = express();
 
+// Trust exactly one proxy hop (Render's load balancer, Replit's proxy, etc.)
+// Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+// when it sees the X-Forwarded-For header set by the reverse proxy in front of us.
+app.set("trust proxy", 1);
+
 app.use(
   pinoHttp({
     logger,
