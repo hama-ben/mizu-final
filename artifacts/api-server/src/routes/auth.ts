@@ -55,11 +55,14 @@ function getSupabase(): SupabaseClient {
   if (_supabaseClient) return _supabaseClient;
 
   const rawUrl = process.env.SUPABASE_URL?.trim();
-  const key    = process.env.SUPABASE_ANON_KEY?.trim();
+  const key    = (
+    process.env.SUPABASE_ANON_KEY?.trim() ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  );
 
   if (!rawUrl || !key) {
     throw new Error(
-      "SUPABASE_URL و SUPABASE_ANON_KEY غير مضبوطَين في المتغيرات البيئية"
+      "SUPABASE_URL و SUPABASE_ANON_KEY (أو SUPABASE_SERVICE_ROLE_KEY) غير مضبوطَين في المتغيرات البيئية"
     );
   }
 
@@ -85,10 +88,14 @@ function getSupabase(): SupabaseClient {
 (function validateSupabaseOnStartup() {
   try {
     const rawUrl = process.env.SUPABASE_URL?.trim() ?? "";
-    const key    = process.env.SUPABASE_ANON_KEY?.trim() ?? "";
+    const key    = (
+      process.env.SUPABASE_ANON_KEY?.trim() ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+      ""
+    );
 
     if (!rawUrl || !key) {
-      logger.warn("⚠️  SUPABASE_URL أو SUPABASE_ANON_KEY غير مضبوطَين — المصادقة ستفشل");
+      logger.warn("⚠️  SUPABASE_URL أو SUPABASE_ANON_KEY (أو SUPABASE_SERVICE_ROLE_KEY) غير مضبوطَين — المصادقة ستفشل");
       return;
     }
 
