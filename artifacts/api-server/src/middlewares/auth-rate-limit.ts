@@ -29,7 +29,7 @@ const _limiter = rateLimit({
       "Rate limit triggered on auth route"
     );
     res.status(429).json({
-      error: "Too many OTP requests. Please try again in 15 minutes.",
+      error: "طلبات كثيرة جداً. يرجى المحاولة مجدداً بعد 15 دقيقة.",
       code: "RATE_LIMITED",
     });
   },

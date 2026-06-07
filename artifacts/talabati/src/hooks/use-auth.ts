@@ -33,9 +33,7 @@ export const useAuth = create<AuthState>((set) => {
       localStorage.setItem("name", data.name);
       localStorage.setItem("email", data.email);
       localStorage.setItem("userType", data.userType);
-      if (data.sessionToken) {
-        localStorage.setItem("sessionToken", data.sessionToken);
-      }
+      localStorage.setItem("sessionToken", data.sessionToken ?? "");
       set({
         userId:       data.userId,
         name:         data.name,
