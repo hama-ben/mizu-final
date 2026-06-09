@@ -31,40 +31,14 @@ app.use(
     },
   }),
 );
-// CORS origin resolver.
-//
-// Allowed in production:
-//   1. Any *.netlify.app subdomain  — covers every deploy preview automatically
-//   2. Any origin listed in CORS_ORIGIN (comma-separated env var) — use this
-//      for custom domains (e.g. talabati.dz) or your specific Netlify site URL
-//
-// In development every origin is allowed so Replit's proxy and local dev
-// servers work without config.
-const extraOrigins: string[] = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
-  : [];
-
-function isAllowedOrigin(origin: string | undefined): boolean {
-  if (!origin) return true; // server-to-server / curl
-  if (process.env.NODE_ENV !== "production") return true;
-  if (/^https:\/\/[a-z0-9-]+\.netlify\.app$/.test(origin)) return true;
-  if (extraOrigins.includes(origin)) return true;
-  return false;
-}
-
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (isAllowedOrigin(origin)) {
-        callback(null, true);
-      } else {
-        logger.warn({ origin }, "CORS blocked origin");
-        callback(new Error(`Origin not allowed: ${origin}`));
-      }
-    },
-    credentials: true,
-  }),
-);
+// CORS — allow all origins.
+// The API is consumed by:
+//   - The Replit web preview (dynamic *.replit.dev origin)
+//   - The Android WebView (origin: capacitor://localhost or https://localhost)
+//   - Future web/mobile clients
+// All authentication is header-based (X-Session-Token, X-User-Id), not
+// cookie-based, so an open CORS policy carries no additional risk.
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
