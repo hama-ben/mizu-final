@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { runMigrations } from "./lib/migrate";
 import { ensureDriverBucket } from "./lib/storage-init";
 import { initRealtimeBroadcast } from "./lib/supabase-server";
 
@@ -17,20 +18,26 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
+// Run DB migrations before accepting any traffic.
+// Uses CREATE TABLE IF NOT EXISTS — safe to run on every cold start.
+runMigrations()
+  .then(() => {
+    app.listen(port, (err) => {
+      if (err) {
+        logger.error({ err }, "Error listening on port");
+        process.exit(1);
+      }
+
+      logger.info({ port }, "Server listening");
+
+      ensureDriverBucket().catch((e) =>
+        logger.error({ err: e }, "Unexpected error in ensureDriverBucket")
+      );
+
+      initRealtimeBroadcast();
+    });
+  })
+  .catch((err) => {
+    logger.error({ err }, "DB migration failed — aborting startup");
     process.exit(1);
-  }
-
-  logger.info({ port }, "Server listening");
-
-  // Verify the driver-verification storage bucket exists; create it if missing.
-  // Runs after the server is already accepting requests so startup latency is unaffected.
-  ensureDriverBucket().catch((e) =>
-    logger.error({ err: e }, "Unexpected error in ensureDriverBucket")
-  );
-
-  // Connect the persistent Realtime broadcast channel used for new-order notifications.
-  initRealtimeBroadcast();
-});
+  });
