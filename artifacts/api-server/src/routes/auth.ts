@@ -119,8 +119,14 @@ function getSupabase(): SupabaseClient {
 // and other common Postgres errors, logging them clearly
 // ─────────────────────────────────────────────────────────────────────────────
 function handleDbError(err: unknown, context: string): { status: number; message: string } {
+  // Drizzle wraps pg errors: the real DatabaseError (with .code) is in err.cause.
+  // Always unwrap so that Postgres error codes (42P01, 28P01, etc.) are visible.
+  const cause   = (err as { cause?: unknown })?.cause ?? err;
   const message = err instanceof Error ? err.message : String(err);
-  const pgCode   = (err as { code?: string })?.code;
+  const causeMsg = cause instanceof Error ? cause.message : undefined;
+  // Prefer the unwrapped code; fall back to the outer wrapper just in case.
+  const pgCode  = (cause as { code?: string })?.code
+                ?? (err  as { code?: string })?.code;
 
   if (pgCode === "42P01") {
     logger.error({ context, err: message },
@@ -132,7 +138,9 @@ function handleDbError(err: unknown, context: string): { status: number; message
     };
   }
 
-  logger.error({ context, pgCode, err: message }, "DB error");
+  // Log both the Drizzle wrapper message and the underlying Postgres message
+  // so Render logs always show the real root cause.
+  logger.error({ context, pgCode, err: message, cause: causeMsg }, "DB error");
   return { status: 500, message: "خطأ داخلي في الخادم" };
 }
 
