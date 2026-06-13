@@ -35,8 +35,8 @@ cp artifacts/talabati/.env.android.example artifacts/talabati/.env.production.lo
 2. Open `.env.production.local` and fill in the real values:
    - `SUPABASE_URL` — your Supabase project URL (`https://xxxx.supabase.co`)
    - `SUPABASE_ANON_KEY` — your Supabase anon key
-   - `VITE_API_BASE_URL` — the **full URL** of your deployed Replit API server  
-     (e.g. `https://talabati.replit.app` — found under the Replit "Publish" tab)
+   - `VITE_API_BASE_URL` — the **full URL** of your deployed Render API server  
+     (e.g. `https://mizu-final.onrender.com`)
 
 > **Important:** the Android WebView cannot use relative URLs like `/api/...`.
 > `VITE_API_BASE_URL` tells the app to call the real deployed server instead.
