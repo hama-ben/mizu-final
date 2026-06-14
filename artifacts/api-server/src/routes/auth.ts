@@ -3,8 +3,8 @@ import { eq } from "drizzle-orm";
 import { db, usersTable, driverStatusTable, driverDetailsTable } from "@workspace/db";
 import { RegisterBody, LoginBody, LoginResponse } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
+import { sendOtpEmail, sendPasswordResetOtpEmail } from "../lib/mailer";
 import crypto from "crypto";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Feature 4: 2-device session limit
@@ -42,77 +42,6 @@ export function revokeSession(userId: string, token: string): void {
 }
 
 const router: IRouter = Router();
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Supabase client — Bug #3 fix: singleton pattern
-// The client is instantiated once per server process and reused on every
-// request, eliminating the per-request overhead of creating new HTTP agents
-// and internal Supabase state objects.
-// ─────────────────────────────────────────────────────────────────────────────
-let _supabaseClient: SupabaseClient | null = null;
-
-function getSupabase(): SupabaseClient {
-  if (_supabaseClient) return _supabaseClient;
-
-  const rawUrl = process.env.SUPABASE_URL?.trim();
-  const key    = (
-    process.env.SUPABASE_ANON_KEY?.trim() ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-  );
-
-  if (!rawUrl || !key) {
-    throw new Error(
-      "SUPABASE_URL و SUPABASE_ANON_KEY (أو SUPABASE_SERVICE_ROLE_KEY) غير مضبوطَين في المتغيرات البيئية"
-    );
-  }
-
-  if (!rawUrl.startsWith("https://")) {
-    throw new Error(
-      `SUPABASE_URL غير صالح: "${rawUrl.slice(0, 40)}..." — يجب أن يبدأ بـ https://`
-    );
-  }
-
-  const url = rawUrl
-    .replace(/\/(rest|auth|storage|realtime|functions)(\/.*)?$/, "")
-    .replace(/\/$/, "");
-
-  logger.debug({ host: new URL(url).hostname }, "Supabase singleton client created");
-
-  _supabaseClient = createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
-  return _supabaseClient;
-}
-
-(function validateSupabaseOnStartup() {
-  try {
-    const rawUrl = process.env.SUPABASE_URL?.trim() ?? "";
-    const key    = (
-      process.env.SUPABASE_ANON_KEY?.trim() ||
-      process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
-      ""
-    );
-
-    if (!rawUrl || !key) {
-      logger.warn("⚠️  SUPABASE_URL أو SUPABASE_ANON_KEY (أو SUPABASE_SERVICE_ROLE_KEY) غير مضبوطَين — المصادقة ستفشل");
-      return;
-    }
-
-    if (!rawUrl.startsWith("https://")) {
-      logger.error(
-        { urlPrefix: rawUrl.slice(0, 30) },
-        "❌ SUPABASE_URL يبدو محلياً — يجب استخدام https://xxxx.supabase.co"
-      );
-      return;
-    }
-
-    const host = new URL(rawUrl).hostname;
-    logger.info({ host }, "✅ Supabase مضبوط بشكل صحيح");
-  } catch {
-    logger.error("❌ SUPABASE_URL تعذّر تحليله — تحقق من صحة القيمة");
-  }
-})();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DB error helper — identifies "relation does not exist" (code 42P01)
@@ -158,6 +87,7 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 
 interface PendingRegistration {
   expiresAt: number;
+  otp: string;
   name: string;
   email: string;
   password: string;
@@ -218,51 +148,29 @@ router.post("/auth/register-request", async (req, res): Promise<void> => {
     return;
   }
 
+  // Generate a server-side 6-digit numeric OTP — never delegated to Supabase.
+  // This guarantees a numeric code is always sent, regardless of the Supabase
+  // project's email-template configuration (magic-link vs OTP mode).
+  const otp = crypto.randomInt(100000, 999999).toString();
+
   pendingStore.set(email, {
     expiresAt: Date.now() + OTP_TTL_MS,
+    otp,
     name, email, password, phone, userType,
     wilaya: wilaya as string,
     commune: commune as string,
   });
 
-  let supabase: SupabaseClient;
   try {
-    supabase = getSupabase();
-  } catch (configErr) {
+    await sendOtpEmail(email, name, otp);
+  } catch (mailErr) {
     pendingStore.delete(email);
-    const msg = configErr instanceof Error ? configErr.message : "خطأ في إعدادات Supabase";
-    req.log.error({ err: msg }, "Supabase config error on register-request");
-    res.status(503).json({ error: msg });
+    req.log.error({ email, err: mailErr }, "OTP email delivery failed");
+    res.status(502).json({ error: "فشل إرسال رمز التحقق — يرجى المحاولة مجدداً" });
     return;
   }
 
-  // Bug #2 fix: shouldCreateUser is intentionally true so Supabase can deliver
-  // the OTP email to users who are not yet in Supabase Auth.
-  // Supabase Auth is used here ONLY as an OTP delivery + verification mechanism.
-  // The application's authoritative user record lives exclusively in usersTable
-  // (managed by Drizzle). The Supabase Auth ghost user is a known side-effect
-  // of this pattern and does not interfere with the app's auth flow.
-  // If the same email re-registers (abandoned flow), signInWithOtp simply
-  // re-sends a fresh OTP to the existing Supabase Auth entry — no duplicate.
-  const { error: otpError } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      shouldCreateUser: true,
-      data: { source: "mizu-registration" },
-    },
-  });
-
-  if (otpError) {
-    pendingStore.delete(email);
-    req.log.error({ email, err: otpError.message }, "Supabase OTP send failed");
-    console.error("[OTP SEND ERROR]", { email, supabaseError: otpError });
-    res.status(502).json({
-      error: `فشل إرسال رمز التحقق عبر Supabase: ${otpError.message}`,
-    });
-    return;
-  }
-
-  req.log.info({ email }, "✅ Supabase OTP sent");
+  req.log.info({ email }, "✅ OTP generated and sent");
   res.status(202).json({
     message: "تم إرسال رمز التحقق المكوّن من 6 أرقام إلى بريدك الإلكتروني",
     email,
@@ -284,7 +192,6 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
     return;
   }
 
-  // Bug #1 fix: strictly enforce 6-digit numeric OTP before hitting Supabase
   if (!/^\d{6}$/.test(otp.trim())) {
     res.status(400).json({ error: "رمز التحقق يجب أن يكون مكوّناً من 6 أرقام فقط" });
     return;
@@ -305,28 +212,10 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
     return;
   }
 
-  let supabase: SupabaseClient;
-  try {
-    supabase = getSupabase();
-  } catch (configErr) {
-    const msg = configErr instanceof Error ? configErr.message : "خطأ في إعدادات Supabase";
-    req.log.error({ err: msg }, "Supabase config error on verify-otp");
-    res.status(503).json({ error: msg });
-    return;
-  }
-
-  const { error: verifyError } = await supabase.auth.verifyOtp({
-    email: email.trim(),
-    token: otp.trim(),
-    type: "email",
-  });
-
-  if (verifyError) {
-    req.log.warn({ email, err: verifyError.message }, "Supabase OTP verification rejected");
-    console.error("[OTP VERIFY ERROR]", { email, supabaseError: verifyError });
-    res.status(400).json({
-      error: "رمز التحقق غير صحيح أو منتهي الصلاحية",
-    });
+  // Verify server-side — no Supabase Auth call needed.
+  if (pending.otp !== otp.trim()) {
+    req.log.warn({ email }, "OTP mismatch");
+    res.status(400).json({ error: "رمز التحقق غير صحيح أو منتهي الصلاحية" });
     return;
   }
 
@@ -515,10 +404,25 @@ router.post("/auth/change-password", async (req, res): Promise<void> => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// In-memory reset-token store (server-issued after OTP verification)
-// TTL = 10 min; token is single-use
+// In-memory pending-reset-OTP store (TTL = 10 min)
+// Separate from resetTokenStore (which holds tokens issued AFTER OTP verification)
 // ─────────────────────────────────────────────────────────────────────────────
 const RESET_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+interface PendingResetOtp {
+  email: string;
+  otp: string;
+  expiresAt: number;
+}
+
+const pendingResetOtpStore = new Map<string, PendingResetOtp>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of pendingResetOtpStore) {
+    if (val.expiresAt < now) pendingResetOtpStore.delete(key);
+  }
+}, 5 * 60 * 1000);
 
 interface PendingReset {
   email: string;
@@ -535,7 +439,7 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Step 1 (password reset): Send Supabase OTP to email
+// Step 1 (password reset): Generate OTP server-side → send via mailer
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/auth/send-reset-otp", async (req, res): Promise<void> => {
   const { email } = req.body as { email?: string };
@@ -562,23 +466,18 @@ router.post("/auth/send-reset-otp", async (req, res): Promise<void> => {
     return;
   }
 
-  let supabase: SupabaseClient;
-  try {
-    supabase = getSupabase();
-  } catch (configErr) {
-    const msg = configErr instanceof Error ? configErr.message : "خطأ في إعدادات Supabase";
-    res.status(503).json({ error: msg });
-    return;
-  }
-
-  const { error: otpError } = await supabase.auth.signInWithOtp({
+  const otp = crypto.randomInt(100000, 999999).toString();
+  pendingResetOtpStore.set(email.trim(), {
     email: email.trim(),
-    options: { shouldCreateUser: false },
+    otp,
+    expiresAt: Date.now() + RESET_TOKEN_TTL_MS,
   });
 
-  if (otpError) {
-    req.log.warn({ email: email.trim(), err: otpError.message }, "send-reset-otp: Supabase OTP failed");
-    // Return 202 regardless to avoid leaking user info
+  try {
+    await sendPasswordResetOtpEmail(email.trim(), otp);
+  } catch (mailErr) {
+    pendingResetOtpStore.delete(email.trim());
+    req.log.warn({ email: email.trim(), err: mailErr }, "send-reset-otp: email delivery failed");
     res.status(202).json({ message: "تم إرسال رمز التحقق إذا كان البريد مسجلاً" });
     return;
   }
@@ -603,26 +502,25 @@ router.post("/auth/verify-reset-otp", async (req, res): Promise<void> => {
     return;
   }
 
-  let supabase: SupabaseClient;
-  try {
-    supabase = getSupabase();
-  } catch (configErr) {
-    const msg = configErr instanceof Error ? configErr.message : "خطأ في إعدادات Supabase";
-    res.status(503).json({ error: msg });
+  const pending = pendingResetOtpStore.get(email.trim());
+  if (!pending) {
+    res.status(400).json({ error: "لم يتم العثور على طلب إعادة تعيين — يرجى إعادة المحاولة" });
+    return;
+  }
+  if (Date.now() > pending.expiresAt) {
+    pendingResetOtpStore.delete(email.trim());
+    res.status(400).json({ error: "انتهت صلاحية الرمز — يرجى طلب رمز جديد" });
     return;
   }
 
-  const { error: verifyError } = await supabase.auth.verifyOtp({
-    email: email.trim(),
-    token: otp.trim(),
-    type: "email",
-  });
-
-  if (verifyError) {
-    req.log.warn({ email: email.trim(), err: verifyError.message }, "verify-reset-otp: Supabase OTP rejected");
+  // Verify server-side — no Supabase Auth call needed.
+  if (pending.otp !== otp.trim()) {
+    req.log.warn({ email: email.trim() }, "verify-reset-otp: OTP mismatch");
     res.status(400).json({ error: "رمز التحقق غير صحيح أو منتهي الصلاحية" });
     return;
   }
+
+  pendingResetOtpStore.delete(email.trim());
 
   // OTP verified — issue a single-use, time-limited reset token
   const resetToken = crypto.randomUUID();
