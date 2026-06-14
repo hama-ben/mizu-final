@@ -10,7 +10,7 @@ import {
   GetActiveOrdersResponse,
   GetOrdersSummaryResponse,
 } from "@workspace/api-zod";
-import { broadcastNewOrder, broadcastOrderClaimed } from "../lib/supabase-server";
+import { broadcastNewOrder, broadcastOrderClaimed, broadcastOrderStatusChange } from "../lib/supabase-server";
 
 const router: IRouter = Router();
 
@@ -322,11 +322,16 @@ router.patch("/orders/:orderId/status", async (req, res): Promise<void> => {
     .from(usersTable)
     .where(eq(usersTable.id, order.userId));
 
-  res.json(mapOrder({
+  const result = mapOrder({
     ...order,
     userName: user?.name ?? null,
     userPhone: user?.phone ?? null,
-  }));
+  });
+
+  res.json(result);
+
+  // Broadcast status change for cross-network real-time — fire-and-forget
+  broadcastOrderStatusChange({ orderId: order.id, status: order.status, driverId: order.driverId }).catch(() => {});
 });
 
 // Atomic accept — prevents two drivers picking the same order
@@ -364,8 +369,9 @@ router.post("/orders/:orderId/accept", async (req, res): Promise<void> => {
 
   req.log.info({ orderId, driverId }, "Order accepted by driver");
 
-  // Fire-and-forget: notify all other drivers that this order is gone
+  // Fire-and-forget: notify other drivers order is gone + notify consumer
   broadcastOrderClaimed(orderId);
+  broadcastOrderStatusChange({ orderId, status: "قيد التوصيل", driverId }).catch(() => {});
 
   res.json(mapOrder({
     ...order,

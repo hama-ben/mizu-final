@@ -31,9 +31,11 @@ router.post("/orders/:orderId/rate", async (req, res): Promise<void> => {
     return;
   }
 
+  const { comment } = req.body as { comment?: string };
+
   const [rating] = await db
     .insert(ratingsTable)
-    .values({ orderId, raterUserId, ratedUserId, raterType, stars })
+    .values({ orderId, raterUserId, ratedUserId, raterType, stars, comment: comment?.trim() || null })
     .returning();
 
   req.log.info({ orderId, raterType, stars }, "Rating submitted");

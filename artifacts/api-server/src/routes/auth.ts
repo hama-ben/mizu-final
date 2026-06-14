@@ -10,8 +10,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // Feature 4: 2-device session limit
 // In-memory session store: userId → ring buffer of up to 2 session tokens
 // ─────────────────────────────────────────────────────────────────────────────
-const MAX_SESSIONS = 2;
-const sessionStore = new Map<string, string[]>(); // userId → [oldest, newest]
+const MAX_SESSIONS = 3;
+const sessionStore = new Map<string, string[]>(); // userId → ring buffer of up to 3 sessions
 
 export function createSession(userId: string): string {
   const token = crypto.randomUUID();
@@ -428,7 +428,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   if (isAtSessionLimit(user.id)) {
-    res.status(403).json({ error: "عذراً، لقد تجاوزت الحد المسموح به للأجهزة. يُسمح بجهازَين فقط في نفس الوقت." });
+    res.status(403).json({ error: "لقد تجاوزت الحد الأقصى للأجهزة المسموح بها (3 أجهزة). يرجى تسجيل الخروج من أحد الأجهزة الأخرى أولاً." });
     return;
   }
 

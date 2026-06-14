@@ -27,7 +27,7 @@ import {
   Package, Truck, CheckCircle2, User, Phone, MapPin,
   Loader2, PlayCircle, PauseCircle, XCircle, Bell, Coffee, Timer,
   CreditCard, Clock, ShieldAlert, CalendarDays, AlertTriangle,
-  Star, Megaphone, Flag,
+  Star, Megaphone,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { DriverStatusInputCurrentStatus } from "@workspace/api-client-react";
@@ -106,6 +106,8 @@ function ExpiredSubscriptionOverlay() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main content
 // ─────────────────────────────────────────────────────────────────────────────
+const BREAK_PRESETS = [15, 30, 45, 60];
+
 function DriverDashboardContent({ driverId }: { driverId: string }) {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -127,6 +129,15 @@ function DriverDashboardContent({ driverId }: { driverId: string }) {
   const myStatusObj = statuses?.find(s => s.driverId === driverId);
   const currentStatus = (myStatusObj?.currentStatus || "مغلق") as DriverStatusInputCurrentStatus;
 
+  // ── Break duration state ──────────────────────────────────────────────────
+  const [showBreakModal, setShowBreakModal] = useState(false);
+  const [breakDurationMinutes, setBreakDurationMinutes] = useState(30);
+  const [customMinutes, setCustomMinutes] = useState("");
+  const [activeBreakSeconds, setActiveBreakSeconds] = useState(30 * 60);
+  const pendingBreakMutateRef = useRef<
+    ((args: { data: { driverId: string; currentStatus: DriverStatusInputCurrentStatus } }, opts: object) => void) | null
+  >(null);
+
   const handleStatusChange = useCallback(
     (status: DriverStatusInputCurrentStatus, mutate: (args: { data: { driverId: string; currentStatus: DriverStatusInputCurrentStatus } }, opts: object) => void) => {
       mutate(
@@ -137,6 +148,27 @@ function DriverDashboardContent({ driverId }: { driverId: string }) {
     [driverId, queryClient]
   );
 
+  const handleBreakRequested = useCallback(
+    (mutate: (args: { data: { driverId: string; currentStatus: DriverStatusInputCurrentStatus } }, opts: object) => void) => {
+      pendingBreakMutateRef.current = mutate;
+      setBreakDurationMinutes(30);
+      setCustomMinutes("");
+      setShowBreakModal(true);
+    },
+    []
+  );
+
+  const confirmBreak = () => {
+    const custom = parseInt(customMinutes, 10);
+    const finalMinutes = !isNaN(custom) && custom > 0 ? custom : breakDurationMinutes;
+    setActiveBreakSeconds(finalMinutes * 60);
+    setShowBreakModal(false);
+    if (pendingBreakMutateRef.current) {
+      handleStatusChange("استراحة", pendingBreakMutateRef.current);
+      pendingBreakMutateRef.current = null;
+    }
+  };
+
   const isPending = account?.accountStatus === "pending";
   const isExpired = account?.subscriptionExpired === true;
 
@@ -145,13 +177,68 @@ function DriverDashboardContent({ driverId }: { driverId: string }) {
       {isPending && <PendingAccountOverlay />}
       {!isPending && isExpired && <ExpiredSubscriptionOverlay />}
 
+      {/* ── Break duration picker modal ─────────────────────────────────── */}
+      {showBreakModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" dir="rtl">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 mx-4 max-w-sm w-full shadow-2xl border border-amber-200 dark:border-amber-700 animate-in zoom-in-95 duration-300">
+            <div className="w-14 h-14 bg-amber-100 dark:bg-amber-900/30 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Timer className="w-7 h-7 text-amber-500" />
+            </div>
+            <h3 className="font-black text-lg text-slate-800 dark:text-white text-center mb-1">مدة الاستراحة</h3>
+            <p className="text-sm text-slate-500 text-center mb-5">اختر كم دقيقة تريد الاستراحة</p>
+
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {BREAK_PRESETS.map(m => (
+                <button key={m} onClick={() => { setBreakDurationMinutes(m); setCustomMinutes(""); }}
+                  className={`py-2.5 rounded-xl font-bold text-sm transition-all ${
+                    breakDurationMinutes === m && !customMinutes
+                      ? "bg-amber-500 text-white shadow-md shadow-amber-400/30"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-amber-100 dark:hover:bg-amber-900/20"
+                  }`}>
+                  {m} د
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 mb-5">
+              <input
+                type="number"
+                min="1"
+                max="240"
+                value={customMinutes}
+                onChange={e => setCustomMinutes(e.target.value)}
+                placeholder="عدد مخصص..."
+                className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-400/40 text-center font-bold"
+              />
+              <span className="text-sm text-slate-500 font-medium">دقيقة</span>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => setShowBreakModal(false)}
+                className="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm">
+                إلغاء
+              </button>
+              <button onClick={confirmBreak}
+                className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-sm shadow-md shadow-amber-400/30 flex items-center justify-center gap-2">
+                <PauseCircle className="w-4 h-4" />بدء الاستراحة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col gap-6 w-full animate-in fade-in duration-500">
         <AnnouncementsCard />
         <SummaryStats />
         {account?.subscriptionExpiresAt && (
           <SubscriptionCountdown expiresAt={account.subscriptionExpiresAt} />
         )}
-        <AttendanceControl driverId={driverId} currentStatus={currentStatus} onStatusChange={handleStatusChange} />
+        <AttendanceControl
+          driverId={driverId}
+          currentStatus={currentStatus}
+          onStatusChange={handleStatusChange}
+          onBreakRequested={handleBreakRequested}
+        />
 
         {currentStatus === "حاضر" && (
           <>
@@ -161,7 +248,7 @@ function DriverDashboardContent({ driverId }: { driverId: string }) {
         )}
 
         {currentStatus === "استراحة" && (
-          <BreakView driverId={driverId} onEndBreak={handleStatusChange} />
+          <BreakView driverId={driverId} onEndBreak={handleStatusChange} breakSeconds={activeBreakSeconds} />
         )}
 
         {currentStatus === "مغلق" && <ClosedView />}
@@ -220,29 +307,21 @@ interface RatingModalDriverProps {
 function DriverRatingModal({ orderId, driverId, consumerUserId, consumerName, onClose, onSubmitted }: RatingModalDriverProps) {
   const [stars, setStars] = useState(0);
   const [hovered, setHovered] = useState(0);
-  const [showDispute, setShowDispute] = useState(false);
-  const [disputeReason, setDisputeReason] = useState("");
+  const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [step, setStep] = useState<"rate" | "done">("rate");
+  const [done, setDone] = useState(false);
 
   const submit = async () => {
     if (stars === 0) { setError("يرجى اختيار عدد النجوم"); return; }
     setLoading(true); setError("");
     try {
-      const data = await customFetch<{ id: string }>(`/api/orders/${orderId}/rate`, {
+      await customFetch<{ id: string }>(`/api/orders/${orderId}/rate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ raterUserId: driverId, ratedUserId: consumerUserId, raterType: "driver", stars }),
+        body: JSON.stringify({ raterUserId: driverId, ratedUserId: consumerUserId, raterType: "driver", stars, comment: comment.trim() || undefined }),
       });
-      if (showDispute && disputeReason.trim()) {
-        await customFetch(`/api/ratings/${data.id}/dispute`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ disputeReason: disputeReason.trim() }),
-        }).catch(() => {});
-      }
-      setStep("done");
+      setDone(true);
       setTimeout(() => { onSubmitted(); }, 1400);
     } catch (err: any) {
       setError(err?.data?.error || "تعذّر إرسال التقييم");
@@ -254,7 +333,7 @@ function DriverRatingModal({ orderId, driverId, consumerUserId, consumerName, on
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 mx-4 max-w-sm w-full shadow-2xl border border-amber-200 dark:border-amber-700 animate-in zoom-in-95 duration-300" dir="rtl">
-        {step === "done" ? (
+        {done ? (
           <div className="text-center py-4">
             <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
               <CheckCircle2 className="w-8 h-8 text-emerald-500" />
@@ -276,15 +355,10 @@ function DriverRatingModal({ orderId, driverId, consumerUserId, consumerName, on
                 </button>
               ))}
             </div>
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 mb-3 cursor-pointer">
-              <input type="checkbox" className="rounded" checked={showDispute} onChange={e => setShowDispute(e.target.checked)} />
-              <span className="flex items-center gap-1"><Flag className="w-3.5 h-3.5 text-red-500" />تقديم اعتراض</span>
-            </label>
-            {showDispute && (
-              <textarea value={disputeReason} onChange={e => setDisputeReason(e.target.value)}
-                placeholder="اكتب سبب اعتراضك..."
-                className="w-full border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-sm resize-none h-20 outline-none focus:ring-2 focus:ring-amber-400/40 bg-white dark:bg-slate-800 text-slate-800 dark:text-white mb-3" />
-            )}
+            <textarea value={comment} onChange={e => setComment(e.target.value)}
+              placeholder="أضف تعليقاً (اختياري)..."
+              rows={3}
+              className="w-full border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-sm resize-none outline-none focus:ring-2 focus:ring-amber-400/40 bg-white dark:bg-slate-800 text-slate-800 dark:text-white mb-4" />
             {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
             <button onClick={submit} disabled={loading || stars === 0}
               className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:opacity-90">
@@ -414,12 +488,15 @@ function SubscriptionCountdown({ expiresAt }: { expiresAt: string }) {
 // Attendance pill slider
 // ─────────────────────────────────────────────────────────────────────────────
 function AttendanceControl({
-  driverId, currentStatus, onStatusChange,
+  driverId, currentStatus, onStatusChange, onBreakRequested,
 }: {
   driverId: string;
   currentStatus: DriverStatusInputCurrentStatus;
   onStatusChange: (
     status: DriverStatusInputCurrentStatus,
+    mutate: (args: { data: { driverId: string; currentStatus: DriverStatusInputCurrentStatus } }, opts: object) => void
+  ) => void;
+  onBreakRequested?: (
     mutate: (args: { data: { driverId: string; currentStatus: DriverStatusInputCurrentStatus } }, opts: object) => void
   ) => void;
 }) {
@@ -445,6 +522,10 @@ function AttendanceControl({
 
   const change = (s: DriverStatusInputCurrentStatus) => {
     if (s === currentStatus) return;
+    if (s === "استراحة" && onBreakRequested) {
+      onBreakRequested(updateStatusMutation.mutate);
+      return;
+    }
     onStatusChange(s, updateStatusMutation.mutate);
   };
 
@@ -475,23 +556,22 @@ function AttendanceControl({
 // ─────────────────────────────────────────────────────────────────────────────
 // Break view
 // ─────────────────────────────────────────────────────────────────────────────
-const BREAK_SECONDS = 30 * 60;
-
 function BreakView({
-  driverId, onEndBreak,
+  driverId, onEndBreak, breakSeconds,
 }: {
   driverId: string;
+  breakSeconds: number;
   onEndBreak: (
     status: DriverStatusInputCurrentStatus,
     mutate: (args: { data: { driverId: string; currentStatus: DriverStatusInputCurrentStatus } }, opts: object) => void
   ) => void;
 }) {
-  const [secondsLeft, setSecondsLeft] = useState(BREAK_SECONDS);
+  const [secondsLeft, setSecondsLeft] = useState(breakSeconds);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const updateStatusMutation = useUpdateDriverStatus();
 
   useEffect(() => {
-    setSecondsLeft(BREAK_SECONDS);
+    setSecondsLeft(breakSeconds);
     intervalRef.current = setInterval(() => {
       setSecondsLeft(prev => {
         if (prev <= 1) { clearInterval(intervalRef.current!); return 0; }
@@ -499,11 +579,11 @@ function BreakView({
       });
     }, 1000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, []);
+  }, [breakSeconds]);
 
   const minutes = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
   const seconds = String(secondsLeft % 60).padStart(2, "0");
-  const progress = ((BREAK_SECONDS - secondsLeft) / BREAK_SECONDS) * 100;
+  const progress = breakSeconds > 0 ? ((breakSeconds - secondsLeft) / breakSeconds) * 100 : 100;
   const isExpired = secondsLeft === 0;
 
   const handleEndBreak = () => {

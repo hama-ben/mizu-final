@@ -39,8 +39,8 @@ app.use(
 // All authentication is header-based (X-Session-Token, X-User-Id), not
 // cookie-based, so an open CORS policy carries no additional risk.
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Auth rate limiter — scoped to /api/auth/* only.
 // /api/health and /api/healthz are on a different path and are never affected.

@@ -61,9 +61,19 @@ export const ratingsTable = pgTable("ratings", {
   ratedUserId: text("rated_user_id").notNull(),
   raterType: text("rater_type").notNull(),
   stars: integer("stars").notNull(),
+  comment: text("comment"),
   disputeReason: text("dispute_reason"),
   isDisputed: boolean("is_disputed").notNull().default(false),
   disputeCount: integer("dispute_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const savedLocationsTable = pgTable("saved_locations", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  label: text("label").notNull(),
+  latitude: text("latitude").notNull(),
+  longitude: text("longitude").notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 

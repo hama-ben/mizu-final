@@ -14,9 +14,10 @@ import { createClient, type SupabaseClient, type RealtimeChannel } from "@supaba
 import ws from "ws";
 import { logger } from "./logger";
 
-export const ORDERS_CHANNEL = "orders:new";
-export const EVENT_NEW_ORDER    = "new_order";
-export const EVENT_ORDER_CLAIMED = "order_claimed";
+export const ORDERS_CHANNEL       = "orders:new";
+export const EVENT_NEW_ORDER      = "new_order";
+export const EVENT_ORDER_CLAIMED  = "order_claimed";
+export const EVENT_STATUS_CHANGED = "order_status_changed";
 
 // ── Singleton client ──────────────────────────────────────────────────────────
 
@@ -98,6 +99,33 @@ export async function broadcastOrderClaimed(orderId: string): Promise<void> {
     logger.debug({ orderId }, "Order claimed broadcast sent");
   } catch (err) {
     logger.warn({ err }, "broadcastOrderClaimed: send failed");
+  }
+}
+
+/**
+ * Broadcast an order-status-changed event so consumers get immediate
+ * updates regardless of which network they're on (cross-network safe
+ * because messages route through Supabase infrastructure, not direct IPs).
+ * Fire-and-forget — failure is logged, never thrown.
+ */
+export async function broadcastOrderStatusChange(payload: {
+  orderId: string;
+  status: string;
+  driverId?: string | null;
+}): Promise<void> {
+  if (!_channel || !_channelReady) {
+    logger.debug("broadcastOrderStatusChange: channel not ready — skipping");
+    return;
+  }
+  try {
+    await _channel.send({
+      type: "broadcast",
+      event: EVENT_STATUS_CHANGED,
+      payload,
+    });
+    logger.debug({ orderId: payload.orderId, status: payload.status }, "Order status change broadcast sent");
+  } catch (err) {
+    logger.warn({ err }, "broadcastOrderStatusChange: send failed");
   }
 }
 

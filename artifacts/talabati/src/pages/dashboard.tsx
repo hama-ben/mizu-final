@@ -9,8 +9,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Droplet, ShoppingBag, ListOrdered, CheckCircle2,
   Truck, Clock, ArrowRight, Loader2, MessageCircle, MapPin, Bell, X,
-  User, Phone, XCircle, Star, Megaphone, Flag,
+  User, Phone, XCircle, Star, Megaphone, Bookmark, BookmarkCheck, Trash2,
 } from "lucide-react";
+import { useRealtimeOrderStatus } from "@/hooks/use-realtime-order-status";
 import { format } from "date-fns";
 
 type View = "menu" | "new-order" | "my-orders";
@@ -270,31 +271,21 @@ interface RatingModalProps {
 function RatingModal({ orderId, raterUserId, ratedUserId, raterType, ratedName, onClose, onSubmitted }: RatingModalProps) {
   const [stars, setStars] = useState(0);
   const [hovered, setHovered] = useState(0);
-  const [showDispute, setShowDispute] = useState(false);
-  const [disputeReason, setDisputeReason] = useState("");
+  const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [ratingId, setRatingId] = useState<string | null>(null);
-  const [step, setStep] = useState<"rate" | "dispute-form" | "done">("rate");
+  const [done, setDone] = useState(false);
 
   const submitRating = async () => {
     if (stars === 0) { setError("يرجى اختيار عدد النجوم"); return; }
     setLoading(true); setError("");
     try {
-      const data = await customFetch<{ id: string }>(`/api/orders/${orderId}/rate`, {
+      await customFetch<{ id: string }>(`/api/orders/${orderId}/rate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ raterUserId, ratedUserId, raterType, stars }),
+        body: JSON.stringify({ raterUserId, ratedUserId, raterType, stars, comment: comment.trim() || undefined }),
       });
-      setRatingId(data.id);
-      if (showDispute && disputeReason.trim()) {
-        await customFetch(`/api/ratings/${data.id}/dispute`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ disputeReason: disputeReason.trim() }),
-        });
-      }
-      setStep("done");
+      setDone(true);
       setTimeout(() => { onSubmitted(); }, 1500);
     } catch (err: any) {
       setError(err?.data?.error || "تعذّر الإرسال، يرجى المحاولة مرة أخرى");
@@ -303,51 +294,16 @@ function RatingModal({ orderId, raterUserId, ratedUserId, raterType, ratedName, 
     }
   };
 
-  const submitDispute = async () => {
-    if (!ratingId || !disputeReason.trim()) { setError("يرجى كتابة سبب الاعتراض"); return; }
-    setLoading(true); setError("");
-    try {
-      await customFetch(`/api/ratings/${ratingId}/dispute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ disputeReason: disputeReason.trim() }),
-      });
-      setStep("done");
-      setTimeout(() => { onSubmitted(); }, 1200);
-    } catch (err: any) {
-      setError(err?.data?.error || "تعذّر إرسال الاعتراض");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 mx-4 max-w-sm w-full shadow-2xl border border-primary/20 animate-in zoom-in-95 duration-300" dir="rtl">
-        {step === "done" ? (
+        {done ? (
           <div className="text-center py-4">
             <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
               <CheckCircle2 className="w-8 h-8 text-emerald-500" />
             </div>
             <p className="font-bold text-slate-800 dark:text-white">شكراً على تقييمك!</p>
           </div>
-        ) : step === "dispute-form" ? (
-          <>
-            <h3 className="font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-2"><Flag className="w-5 h-5 text-red-500" />تقديم اعتراض</h3>
-            <textarea
-              value={disputeReason}
-              onChange={e => setDisputeReason(e.target.value)}
-              placeholder="اكتب سبب اعتراضك هنا..."
-              className="w-full border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-sm resize-none h-24 outline-none focus:ring-2 focus:ring-primary/40 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
-            />
-            {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
-            <div className="flex gap-2 mt-4">
-              <button onClick={() => setStep("rate")} className="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm">رجوع</button>
-              <button onClick={submitDispute} disabled={loading} className="flex-1 py-3 rounded-2xl bg-red-500 text-white font-bold text-sm disabled:opacity-60 flex items-center justify-center gap-2">
-                {loading && <Loader2 className="w-4 h-4 animate-spin" />}إرسال الاعتراض
-              </button>
-            </div>
-          </>
         ) : (
           <>
             <button onClick={onClose} className="absolute top-4 left-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200">
@@ -363,18 +319,13 @@ function RatingModal({ orderId, raterUserId, ratedUserId, raterType, ratedName, 
                 </button>
               ))}
             </div>
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 mb-4 cursor-pointer">
-              <input type="checkbox" className="rounded" checked={showDispute} onChange={e => setShowDispute(e.target.checked)} />
-              <span>رغبتُ في تقديم اعتراض</span>
-            </label>
-            {showDispute && (
-              <textarea
-                value={disputeReason}
-                onChange={e => setDisputeReason(e.target.value)}
-                placeholder="اكتب سبب اعتراضك..."
-                className="w-full border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-sm resize-none h-20 outline-none focus:ring-2 focus:ring-primary/40 bg-white dark:bg-slate-800 text-slate-800 dark:text-white mb-3"
-              />
-            )}
+            <textarea
+              value={comment}
+              onChange={e => setComment(e.target.value)}
+              placeholder="أضف تعليقاً (اختياري)..."
+              rows={3}
+              className="w-full border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-sm resize-none outline-none focus:ring-2 focus:ring-primary/40 bg-white dark:bg-slate-800 text-slate-800 dark:text-white mb-4"
+            />
             {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
             <button onClick={submitRating} disabled={loading || stars === 0}
               className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-primary to-cyan-500 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:opacity-90">
@@ -411,6 +362,8 @@ function MenuView({ onSelect }: { onSelect: (view: View) => void }) {
   );
 }
 
+type SavedLocation = { id: string; label: string; latitude: number; longitude: number };
+
 function NewOrderView({ onBack, onSuccess, userId, queryClient }: {
   onBack: () => void; onSuccess: () => void;
   userId: string; queryClient: ReturnType<typeof useQueryClient>;
@@ -420,6 +373,17 @@ function NewOrderView({ onBack, onSuccess, userId, queryClient }: {
   const [gpsState, setGpsState] = useState<"idle" | "loading" | "acquired">("idle");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const createOrderMutation = useCreateOrder();
+
+  const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
+  const [showSaveForm, setShowSaveForm] = useState(false);
+  const [saveLabel, setSaveLabel] = useState("");
+  const [savingLocation, setSavingLocation] = useState(false);
+
+  useEffect(() => {
+    customFetch<SavedLocation[]>(`/api/locations/${userId}`)
+      .then(setSavedLocations)
+      .catch(() => {});
+  }, [userId]);
 
   const toggleVolume = (vol: string) => {
     if (selectedVolumes.includes(vol)) {
@@ -445,6 +409,35 @@ function NewOrderView({ onBack, onSuccess, userId, queryClient }: {
       () => { setGpsState("idle"); setError("تعذّر تحديد موقعك. تأكد من منح الإذن للمتصفح."); },
       { enableHighAccuracy: true, timeout: 10000 }
     );
+  };
+
+  const handleSelectSavedLocation = (loc: SavedLocation) => {
+    setCoords({ lat: loc.latitude, lng: loc.longitude });
+    setGpsState("acquired");
+    setError("");
+  };
+
+  const handleSaveLocation = async () => {
+    if (!coords || !saveLabel.trim()) return;
+    setSavingLocation(true);
+    try {
+      const newLoc = await customFetch<SavedLocation>(`/api/locations/${userId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: saveLabel.trim(), latitude: coords.lat, longitude: coords.lng }),
+      });
+      setSavedLocations(prev => [...prev, newLoc]);
+      setShowSaveForm(false);
+      setSaveLabel("");
+    } catch { /* silently fail */ }
+    finally { setSavingLocation(false); }
+  };
+
+  const handleDeleteSavedLocation = async (locId: string) => {
+    try {
+      await customFetch(`/api/locations/${locId}`, { method: "DELETE" });
+      setSavedLocations(prev => prev.filter(l => l.id !== locId));
+    } catch { /* silently fail */ }
   };
 
   const handleSubmit = () => {
@@ -474,7 +467,43 @@ function NewOrderView({ onBack, onSuccess, userId, queryClient }: {
       {error && <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-2xl mb-4">{error}</div>}
 
       <div className="glass-panel rounded-3xl p-6 mb-6">
-        <div className="mb-6">
+        {/* ── Saved locations dropdown ── */}
+        {savedLocations.length > 0 && (
+          <div className="mb-5">
+            <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1">
+              <Bookmark className="w-3.5 h-3.5" />مواقعي المحفوظة
+            </p>
+            <div className="space-y-2">
+              {savedLocations.map(loc => (
+                <div key={loc.id} className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleSelectSavedLocation(loc)}
+                    className={`flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium text-right transition-all ${
+                      coords?.lat === loc.latitude && coords?.lng === loc.longitude
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 hover:border-primary/40"
+                    }`}
+                  >
+                    {coords?.lat === loc.latitude && coords?.lng === loc.longitude
+                      ? <BookmarkCheck className="w-4 h-4 shrink-0" />
+                      : <Bookmark className="w-4 h-4 shrink-0 text-slate-400" />
+                    }
+                    {loc.label}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSavedLocation(loc.id)}
+                    className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                    title="حذف"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mb-4">
           <button onClick={handleLocate} disabled={gpsState === "loading" || gpsState === "acquired"}
             className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-bold text-base transition-all shadow-md active:scale-[0.98] ${
               gpsState === "acquired"
@@ -486,6 +515,40 @@ function NewOrderView({ onBack, onSuccess, userId, queryClient }: {
           </button>
           {coords && <p className="text-xs text-slate-400 text-center mt-2">{coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</p>}
         </div>
+
+        {/* ── Save current GPS location ── */}
+        {gpsState === "acquired" && coords && !savedLocations.some(l => l.latitude === coords.lat && l.longitude === coords.lng) && (
+          <div className="mb-5">
+            {showSaveForm ? (
+              <div className="flex gap-2 items-center">
+                <input
+                  value={saveLabel}
+                  onChange={e => setSaveLabel(e.target.value)}
+                  placeholder="اسم الموقع (مثال: منزلي)"
+                  className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                  dir="rtl"
+                />
+                <button
+                  onClick={handleSaveLocation}
+                  disabled={!saveLabel.trim() || savingLocation}
+                  className="px-3 py-2 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-50 flex items-center gap-1"
+                >
+                  {savingLocation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookmarkCheck className="w-3.5 h-3.5" />}
+                  حفظ
+                </button>
+                <button onClick={() => { setShowSaveForm(false); setSaveLabel(""); }} className="p-2 rounded-xl text-slate-400 hover:text-slate-600">
+                  <XCircle className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setShowSaveForm(true)}
+                className="w-full py-2 rounded-xl flex items-center justify-center gap-2 text-sm text-primary border border-primary/30 hover:bg-primary/5 transition-colors font-medium">
+                <Bookmark className="w-4 h-4" />حفظ هذا الموقع للمرات القادمة
+              </button>
+            )}
+          </div>
+        )}
+
 
         <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Droplet className="w-5 h-5 text-primary" />اختر الحجم (اختر حتى 3)</h3>
         <div className="flex flex-wrap gap-2 mb-6">
@@ -524,6 +587,10 @@ function MyOrdersView({ onBack, userId, onDriverArrived, onDriverAccepted, query
   onDriverAccepted: (info: DriverAcceptedInfo) => void;
   queryClient: ReturnType<typeof useQueryClient>;
 }) {
+  // Cross-network real-time: invalidates orders cache on driver status changes via Supabase Realtime.
+  // Falls back to the 5-second poll transparently when WebSocket is unavailable.
+  useRealtimeOrderStatus(userId);
+
   const { data: orders, isLoading } = useGetUserOrders(userId, {
     query: {
       enabled: !!userId,

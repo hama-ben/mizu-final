@@ -86,6 +86,17 @@ CREATE TABLE IF NOT EXISTS "announcements" (
   "is_active"       boolean   NOT NULL DEFAULT true,
   "created_at"      timestamp NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS "saved_locations" (
+  "id"         text      PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "user_id"    text      NOT NULL,
+  "label"      text      NOT NULL,
+  "latitude"   text      NOT NULL,
+  "longitude"  text      NOT NULL,
+  "created_at" timestamp NOT NULL DEFAULT now()
+);
+
+ALTER TABLE "ratings" ADD COLUMN IF NOT EXISTS "comment" text;
 `;
 
 export async function runMigrations(): Promise<void> {

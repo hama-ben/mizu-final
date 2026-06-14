@@ -5,6 +5,7 @@ import driverRouter from "./driver";
 import ordersRouter from "./orders";
 import ratingsRouter from "./ratings";
 import announcementsRouter from "./announcements";
+import locationsRouter from "./locations";
 
 const router: IRouter = Router();
 
@@ -51,5 +52,6 @@ router.use(driverRouter);
 router.use(ordersRouter);
 router.use(ratingsRouter);
 router.use(announcementsRouter);
+router.use(locationsRouter);
 
 export default router;
