@@ -3,7 +3,7 @@ import { eq, desc, sql } from "drizzle-orm";
 import { db, driverStatusTable, usersTable, ordersTable, subscriptionPaymentsTable, driverDetailsTable } from "@workspace/db";
 import { UpdateDriverStatusBody } from "@workspace/api-zod";
 import multer from "multer";
-import { getSupabaseServer } from "../lib/supabase-server";
+import { getSupabaseAdmin } from "../lib/supabase-server";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -43,7 +43,7 @@ router.post("/driver/upload-file", upload.single("file"), async (req, res): Prom
     return;
   }
 
-  const client = getSupabaseServer();
+  const client = getSupabaseAdmin();
   if (!client) {
     res.status(503).json({ error: "خدمة التخزين غير متاحة" });
     return;

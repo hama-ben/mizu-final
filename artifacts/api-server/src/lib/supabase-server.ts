@@ -18,7 +18,17 @@ export const EVENT_NEW_ORDER      = "new_order";
 export const EVENT_ORDER_CLAIMED  = "order_claimed";
 export const EVENT_STATUS_CHANGED = "order_status_changed";
 
-// ── Singleton client ──────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function normaliseUrl(raw: string): string {
+  return raw
+    .replace(/\/(rest|auth|storage|realtime|functions)(\/.*)?$/, "")
+    .replace(/\/$/, "");
+}
+
+// ── Broadcast/realtime client (anon key is fine) ──────────────────────────────
+// Used only for Realtime channel subscriptions and broadcasts.
+// Falls back to anon key when service-role key is absent.
 
 let _client: SupabaseClient | null = null;
 
@@ -35,15 +45,39 @@ export function getSupabaseServer(): SupabaseClient | null {
     return null;
   }
 
-  const url = rawUrl
-    .replace(/\/(rest|auth|storage|realtime|functions)(\/.*)?$/, "")
-    .replace(/\/$/, "");
-
-  _client = createClient(url, key, {
+  _client = createClient(normaliseUrl(rawUrl), key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
   return _client;
+}
+
+// ── Storage admin client (service-role key ONLY) ──────────────────────────────
+// Must be used for all server-side storage operations (upload, delete, etc.).
+// The service-role key bypasses RLS entirely — never falls back to anon key
+// because anon uploads are blocked by RLS and would silently fail.
+
+let _adminClient: SupabaseClient | null = null;
+
+export function getSupabaseAdmin(): SupabaseClient | null {
+  if (_adminClient) return _adminClient;
+
+  const rawUrl = process.env.SUPABASE_URL?.trim();
+  const key    = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+
+  if (!rawUrl || !key) {
+    logger.warn(
+      "supabase-server: SUPABASE_SERVICE_ROLE_KEY not set — " +
+      "storage uploads will be unavailable until it is configured"
+    );
+    return null;
+  }
+
+  _adminClient = createClient(normaliseUrl(rawUrl), key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  return _adminClient;
 }
 
 // ── Persistent broadcast channel ──────────────────────────────────────────────
