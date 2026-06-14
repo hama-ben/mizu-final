@@ -14,7 +14,6 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import ws from "ws";
 import { logger } from "./logger";
 
 export const DRIVER_DOCS_BUCKET = "driver-verification";
@@ -56,7 +55,6 @@ export async function ensureDriverBucket(): Promise<void> {
 
   const admin = createClient(projectUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
-    realtime: { transport: ws },
   });
 
   // ── Step 1: list all buckets ─────────────────────────────────────────────

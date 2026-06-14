@@ -11,7 +11,6 @@
  */
 
 import { createClient, type SupabaseClient, type RealtimeChannel } from "@supabase/supabase-js";
-import ws from "ws";
 import { logger } from "./logger";
 
 export const ORDERS_CHANNEL       = "orders:new";
@@ -42,7 +41,6 @@ export function getSupabaseServer(): SupabaseClient | null {
 
   _client = createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
-    realtime: { transport: ws },
   });
 
   return _client;

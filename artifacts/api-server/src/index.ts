@@ -1,3 +1,7 @@
+// Node.js 20 has no native WebSocket — polyfill before any Supabase import.
+import WebSocket from "ws";
+(globalThis as unknown as { WebSocket: typeof WebSocket }).WebSocket = WebSocket;
+
 import app from "./app";
 import { logger } from "./lib/logger";
 import { runMigrations } from "./lib/migrate";
