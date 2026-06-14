@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm";
 import { db, usersTable, driverStatusTable, driverDetailsTable } from "@workspace/db";
 import { RegisterBody, LoginBody, LoginResponse } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
-import { sendOtpEmail, sendPasswordResetOtpEmail } from "../lib/mailer";
+import { sendPasswordResetOtpEmail } from "../lib/mailer";
+import { getSupabaseServer } from "../lib/supabase-server";
 import crypto from "crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,12 +83,14 @@ function hashPassword(password: string): string {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // In-memory pending-registration store (TTL = 10 min)
+// The OTP itself is NOT stored here — Supabase Auth owns the OTP lifecycle.
+// We only keep the extra registration data (name, password, phone, etc.) so
+// that verify-otp can create the user row after Supabase confirms the code.
 // ─────────────────────────────────────────────────────────────────────────────
 const OTP_TTL_MS = 10 * 60 * 1000;
 
 interface PendingRegistration {
   expiresAt: number;
-  otp: string;
   name: string;
   email: string;
   password: string;
@@ -107,7 +110,15 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Step 1: Validate inputs → send real Supabase OTP to email
+// Step 1: Validate inputs → ask Supabase Auth to send a 6-digit OTP email
+//
+// Supabase Auth is the single source of truth for OTP generation, delivery,
+// and expiry (supabase.auth.signInWithOtp).  The server never sees the code.
+// Pending registration data (name, password, phone, etc.) is kept in memory
+// until verify-otp succeeds.
+//
+// ⚠️  Requires the Supabase project to be in OTP mode (not magic-link):
+//     Supabase dashboard → Authentication → Providers → Email → OTP
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/auth/register-request", async (req, res): Promise<void> => {
   const parsed = RegisterBody.safeParse(req.body);
@@ -123,7 +134,7 @@ router.post("/auth/register-request", async (req, res): Promise<void> => {
     return;
   }
 
-  // Uniqueness checks — wrap in try/catch for table-name resiliency
+  // Uniqueness checks
   try {
     const [existingEmail] = await db
       .select({ id: usersTable.id })
@@ -148,29 +159,34 @@ router.post("/auth/register-request", async (req, res): Promise<void> => {
     return;
   }
 
-  // Generate a server-side 6-digit numeric OTP — never delegated to Supabase.
-  // This guarantees a numeric code is always sent, regardless of the Supabase
-  // project's email-template configuration (magic-link vs OTP mode).
-  const otp = crypto.randomInt(100000, 999999).toString();
+  // Ask Supabase Auth to generate and email the 6-digit OTP.
+  const supabase = getSupabaseServer();
+  if (!supabase) {
+    req.log.error({ email }, "register-request: Supabase not configured (SUPABASE_URL/key missing)");
+    res.status(503).json({ error: "خدمة التحقق غير متاحة — تواصل مع الدعم" });
+    return;
+  }
 
+  const { error: otpError } = await supabase.auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: true },
+  });
+
+  if (otpError) {
+    req.log.error({ email, err: otpError.message }, "register-request: Supabase signInWithOtp failed");
+    res.status(502).json({ error: "فشل إرسال رمز التحقق — يرجى المحاولة مجدداً" });
+    return;
+  }
+
+  // Store registration data until verify-otp succeeds
   pendingStore.set(email, {
     expiresAt: Date.now() + OTP_TTL_MS,
-    otp,
     name, email, password, phone, userType,
     wilaya: wilaya as string,
     commune: commune as string,
   });
 
-  try {
-    await sendOtpEmail(email, name, otp);
-  } catch (mailErr) {
-    pendingStore.delete(email);
-    req.log.error({ email, err: mailErr }, "OTP email delivery failed");
-    res.status(502).json({ error: "فشل إرسال رمز التحقق — يرجى المحاولة مجدداً" });
-    return;
-  }
-
-  req.log.info({ email }, "✅ OTP generated and sent");
+  req.log.info({ email }, "✅ Supabase OTP sent");
   res.status(202).json({
     message: "تم إرسال رمز التحقق المكوّن من 6 أرقام إلى بريدك الإلكتروني",
     email,
@@ -178,11 +194,14 @@ router.post("/auth/register-request", async (req, res): Promise<void> => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Step 2: Verify OTP → create user in DB
+// Step 2: Verify OTP via Supabase Auth → create user in DB
 //
-// FIX 1: Drivers are auto-approved (accountStatus = 'active') at registration.
-//         They bypass the "under review" screen entirely and go straight
-//         to the docs upload flow, then directly to the dashboard.
+// supabase.auth.verifyOtp validates the 6-digit code that Supabase emailed.
+// On success the Supabase Auth session is discarded — the app issues its own
+// session token via createSession().
+//
+// Drivers are auto-approved (accountStatus = 'active') at registration so
+// they bypass the "under review" screen and go straight to the docs flow.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/auth/verify-otp", async (req, res): Promise<void> => {
   const { email, otp } = req.body as { email?: string; otp?: string };
@@ -212,9 +231,21 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
     return;
   }
 
-  // Verify server-side — no Supabase Auth call needed.
-  if (pending.otp !== otp.trim()) {
-    req.log.warn({ email }, "OTP mismatch");
+  // Delegate OTP verification to Supabase Auth.
+  const supabase = getSupabaseServer();
+  if (!supabase) {
+    res.status(503).json({ error: "خدمة التحقق غير متاحة — تواصل مع الدعم" });
+    return;
+  }
+
+  const { error: verifyError } = await supabase.auth.verifyOtp({
+    email,
+    token: otp.trim(),
+    type: "email",
+  });
+
+  if (verifyError) {
+    req.log.warn({ email, err: verifyError.message }, "verify-otp: Supabase verifyOtp failed");
     res.status(400).json({ error: "رمز التحقق غير صحيح أو منتهي الصلاحية" });
     return;
   }
