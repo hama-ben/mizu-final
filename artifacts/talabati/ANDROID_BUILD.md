@@ -1,4 +1,4 @@
-# Building the Talabati Android APK
+# Building the Mizu Android APK
 
 ## Prerequisites (on your local machine)
 

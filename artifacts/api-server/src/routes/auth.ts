@@ -248,7 +248,7 @@ router.post("/auth/register-request", async (req, res): Promise<void> => {
     email,
     options: {
       shouldCreateUser: true,
-      data: { source: "al-shuaiba-registration" },
+      data: { source: "mizu-registration" },
     },
   });
 

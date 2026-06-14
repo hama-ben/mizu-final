@@ -1,4 +1,4 @@
-# الشعيبية — Al-Shaibia Water Delivery
+# Mizu — Water Delivery App
 
 _A full-stack Arabic water delivery app connecting consumers to drivers in Algeria, with OTP registration, geo-fencing by wilaya/commune, driver subscriptions, and real-time order dispatch._
 

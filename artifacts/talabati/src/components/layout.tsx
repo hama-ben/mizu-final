@@ -119,7 +119,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
               <WaterTruckIcon className="w-7 h-5 text-primary" />
             </div>
-            <span className="font-bold text-lg text-primary tracking-tight">طلباتي</span>
+            <span className="font-bold text-lg text-primary tracking-tight">Mizu</span>
           </div>
 
           <div className="flex items-center gap-2">

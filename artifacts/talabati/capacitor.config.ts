@@ -1,8 +1,8 @@
 import { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.alshuaiba.app",
-  appName: "الشعيبة",
+  appId: "com.mizu.app",
+  appName: "Mizu",
   webDir: "dist/public",
   android: {
     buildOptions: {
