@@ -1,6 +1,8 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import path from "path";
+import { fileURLToPath } from "url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { authRateLimiter } from "./middlewares/auth-rate-limit";
@@ -47,5 +49,22 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/api/auth", authRateLimiter);
 
 app.use("/api", router);
+
+// ── Production: serve the built Vite frontend from the same server ────────────
+// In production there is no separate Vite dev server, so the API server
+// serves the pre-built SPA files and falls back to index.html for all
+// non-API paths so client-side routing works correctly.
+if (process.env.NODE_ENV === "production") {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const frontendDist = path.resolve(__dirname, "../../talabati/dist/public");
+
+  app.use(express.static(frontendDist));
+
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(frontendDist, "index.html"));
+  });
+
+  logger.info({ frontendDist }, "Serving static frontend in production");
+}
 
 export default app;

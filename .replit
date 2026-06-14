@@ -2,7 +2,9 @@ run = "npm run dev"
 modules = ["nodejs-20", "web", "bash", "python-3.11"]
 
 [deployment]
-deploymentTarget = "cloudrun"
+deploymentTarget = "vm"
+run = ["node", "artifacts/api-server/dist/index.mjs"]
+build = ["bash", "-c", "pnpm install --frozen-lockfile && pnpm --filter @workspace/talabati run build && pnpm --filter @workspace/api-server run build"]
 
 [agent]
 expertMode = true
