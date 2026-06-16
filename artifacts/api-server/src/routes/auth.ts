@@ -7,41 +7,6 @@ import { sendPasswordResetOtpEmail } from "../lib/mailer";
 import { getSupabaseServer } from "../lib/supabase-server";
 import crypto from "crypto";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Feature 4: 2-device session limit
-// In-memory session store: userId → ring buffer of up to 2 session tokens
-// ─────────────────────────────────────────────────────────────────────────────
-const MAX_SESSIONS = 3;
-const sessionStore = new Map<string, string[]>(); // userId → ring buffer of up to 3 sessions
-
-export function createSession(userId: string): string {
-  const token = crypto.randomUUID();
-  const sessions = sessionStore.get(userId) ?? [];
-  sessions.push(token);
-  if (sessions.length > MAX_SESSIONS) sessions.splice(0, sessions.length - MAX_SESSIONS);
-  sessionStore.set(userId, sessions);
-  logger.info({ userId, activeSessions: sessions.length }, "Session created");
-  return token;
-}
-
-export function isAtSessionLimit(userId: string): boolean {
-  const sessions = sessionStore.get(userId);
-  return sessions != null && sessions.length >= MAX_SESSIONS;
-}
-
-export function validateSession(userId: string, token: string): boolean {
-  const sessions = sessionStore.get(userId);
-  return sessions != null && sessions.includes(token);
-}
-
-export function revokeSession(userId: string, token: string): void {
-  const sessions = sessionStore.get(userId);
-  if (!sessions) return;
-  const idx = sessions.indexOf(token);
-  if (idx !== -1) sessions.splice(idx, 1);
-  if (sessions.length === 0) sessionStore.delete(userId);
-}
-
 const router: IRouter = Router();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -304,7 +269,7 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
     }
   }
 
-  const sessionToken = createSession(user.id);
+  const sessionToken = crypto.randomUUID();
   res.status(201).json({
     ...LoginResponse.parse({
       userId:   user.id,
@@ -347,12 +312,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  if (isAtSessionLimit(user.id)) {
-    res.status(403).json({ error: "لقد تجاوزت الحد الأقصى للأجهزة المسموح بها (3 أجهزة). يرجى تسجيل الخروج من أحد الأجهزة الأخرى أولاً." });
-    return;
-  }
-
-  const sessionToken = createSession(user.id);
+  const sessionToken = crypto.randomUUID();
   req.log.info({ userId: user.id }, "User logged in");
   res.json({
     ...LoginResponse.parse({
@@ -366,12 +326,9 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Logout — revoke this device's session token
+// Logout
 // ─────────────────────────────────────────────────────────────────────────────
-router.post("/auth/logout", (req, res): void => {
-  const userId      = req.headers["x-user-id"] as string | undefined;
-  const sessionToken = req.headers["x-session-token"] as string | undefined;
-  if (userId && sessionToken) revokeSession(userId, sessionToken);
+router.post("/auth/logout", (_req, res): void => {
   res.status(204).end();
 });
 
@@ -382,7 +339,7 @@ router.post("/auth/change-password", async (req, res): Promise<void> => {
   const userId      = req.headers["x-user-id"] as string | undefined;
   const sessionToken = req.headers["x-session-token"] as string | undefined;
 
-  if (!userId || !sessionToken || !validateSession(userId, sessionToken)) {
+  if (!userId) {
     res.status(401).json({ error: "يجب تسجيل الدخول أولاً" });
     return;
   }
